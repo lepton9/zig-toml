@@ -1,12 +1,14 @@
 const std = @import("std");
 
+pub const TomlTable = std.StringHashMap(TomlValue);
+
 pub const TomlValue = union(enum) {
     int: i64,
     float: f64,
     bool: bool,
     string: []const u8,
     array: std.ArrayList(TomlValue),
-    table: std.StringHashMap(TomlValue),
+    table: TomlTable,
 
     pub fn init_table(allocator: std.mem.Allocator) TomlValue {
         const table = TomlValue{ .table = std.StringHashMap(TomlValue).init(allocator) };
@@ -75,7 +77,7 @@ pub const Toml = struct {
         self.alloc.destroy(self);
     }
 
-    pub fn get_table(self: *Toml) std.StringHashMap(TomlValue) {
+    pub fn get_table(self: *Toml) TomlTable {
         return self.table.value();
     }
 };

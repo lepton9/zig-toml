@@ -58,6 +58,8 @@ pub const Parser = struct {
                 var table_value = toml.TomlValue{ .table = table.* };
                 try self.parse_table(&table_value.table);
             } else {
+                const key_value = try self.parse_key_value();
+                try add_key_value(root, key_value);
             }
             self.skip_comments();
         }
@@ -76,6 +78,22 @@ pub const Parser = struct {
         }
         return self.content[start..self.index];
     }
+
+    fn parse_key_value(self: *Parser) !KeyValue {
+        const start = self.index;
+        while (self.current()) |c| {
+            if (c == '=') {
+                const key = self.content[start..self.index];
+                self.advance();
+                self.skip_whitespace();
+                const value = self.parse_value();
+                return KeyValue{ .key = key, .value = toml.TomlValue{ .string = value } };
+            }
+            self.advance();
+        }
+        return ParseError.InvalidKeyValuePair;
+    }
+
     fn starts_with(self: *Parser, prefix: []const u8) bool {
         if (self.pos + prefix.len > self.input.len) return false;
         return std.mem.eql(u8, self.input[self.pos .. self.pos + prefix.len], prefix);
@@ -157,4 +175,12 @@ fn get_or_create_table(
         }
     }
     return current;
+}
+
+fn add_key_value(root: *toml.TomlTable, key_value: KeyValue) !void {
+    const entry = try root.getOrPut(key_value.key);
+    if (entry.found_existing) {
+        return ParseError.DuplicateKeyValuePair;
+    }
+    entry.value_ptr.* = key_value.value;
 }

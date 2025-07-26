@@ -11,7 +11,7 @@ pub const TomlValue = union(enum) {
     table: TomlTable,
 
     pub fn init_table(allocator: std.mem.Allocator) TomlValue {
-        const table = TomlValue{ .table = std.StringHashMap(TomlValue).init(allocator) };
+        const table = TomlValue{ .table = TomlTable.init(allocator) };
         return table;
     }
 

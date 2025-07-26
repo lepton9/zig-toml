@@ -4,6 +4,13 @@ const toml = @import("toml.zig");
 pub const ParseError = error{
     OpenFileError,
     InvalidTableNesting,
+    InvalidKeyValuePair,
+    DuplicateKeyValuePair,
+};
+
+const KeyValue = struct {
+    key: []const u8,
+    value: toml.TomlValue,
 };
 
 pub const Parser = struct {
@@ -28,38 +35,66 @@ pub const Parser = struct {
         const buffer = try self.alloc.alloc(u8, file_size);
         defer self.alloc.free(buffer);
         _ = try file.readAll(buffer);
-        return self.parse_string(buffer);
+        return try self.parse_string(buffer);
     }
 
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
         self.content = content;
-        return self.parse_root();
+        return try self.parse_root();
     }
 
-    fn parse_root(self: *Parser) !toml.Toml {
+    fn parse_root(self: *Parser) !*toml.Toml {
         const root = try toml.Toml.init(self.alloc);
-        self.parse_table(&root.table.table);
+        try self.parse_table(&root.table.table);
         return root;
     }
 
     fn parse_table(self: *Parser, root: *toml.TomlTable) !void {
-        var current = root;
         self.skip_comments();
-        while (self.current() != null) {
+        while (self.current()) |c| {
+            if (c == '[') {
+                const header = self.parse_table_header();
+                const table = try get_or_create_table(root, header, self.alloc);
+                var table_value = toml.TomlValue{ .table = table.* };
+                try self.parse_table(&table_value.table);
+            } else {
+            }
             self.skip_comments();
         }
     }
 
+    fn parse_table_header(self: *Parser) []const u8 {
+        self.advance();
+        const start = self.index;
+        while (self.current()) |c| {
+            if (c == ']') {
+                const header = self.content[start..self.index];
+                self.advance();
+                return header;
+            }
+            self.advance();
+        }
+        return self.content[start..self.index];
+    }
+    fn starts_with(self: *Parser, prefix: []const u8) bool {
+        if (self.pos + prefix.len > self.input.len) return false;
+        return std.mem.eql(u8, self.input[self.pos .. self.pos + prefix.len], prefix);
+    }
+
+    fn parse_value(self: *Parser) !toml.TomlValue {
+        self.skip_whitespace();
+    }
+
     pub fn current(self: *const Parser) ?u8 {
-        if (self.content.len == 0) {
+        if (self.index >= self.content.len) {
             return null;
         } else {
-            return self.input[self.index];
+            return self.content[self.index];
         }
     }
 
     fn advance(self: *Parser) void {
-        if (self.index < self.input.len) self.index += 1;
+        if (self.index < self.content.len) self.index += 1;
     }
 
     fn skip_whitespace(self: *Parser) void {
@@ -80,6 +115,7 @@ pub const Parser = struct {
     }
 
     fn skip_comments(self: *Parser) void {
+        self.skip_whitespace();
         while (self.current()) |c| {
             if (c == '#') {
                 self.skip_line();
@@ -89,6 +125,7 @@ pub const Parser = struct {
                 break;
             }
         }
+        self.skip_whitespace();
     }
 
     pub fn next(self: *Parser) ?u8 {
@@ -98,10 +135,6 @@ pub const Parser = struct {
         return self.content[self.index];
     }
 };
-
-// fn is_comment(line: []const u8) {
-//
-// }
 
 fn get_or_create_table(
     root: *toml.TomlTable,

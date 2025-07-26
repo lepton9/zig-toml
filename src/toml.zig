@@ -62,16 +62,20 @@ pub const TomlValue = union(enum) {
 
 pub const Toml = struct {
     table: TomlValue,
-    allocator: std.mem.Allocator,
+    alloc: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) !*Toml {
         const t = try allocator.create(Toml);
-        t.* = .{ .table = TomlValue.init_table(allocator), .allocator = allocator };
+        t.* = .{ .table = TomlValue.init_table(allocator), .alloc = allocator };
         return t;
     }
 
     pub fn deinit(self: *Toml) void {
-        self.table.deinit(self.allocator);
-        self.allocator.destroy(self);
+        self.table.deinit(self.alloc);
+        self.alloc.destroy(self);
+    }
+
+    pub fn get_table(self: *Toml) std.StringHashMap(TomlValue) {
+        return self.table.value();
     }
 };

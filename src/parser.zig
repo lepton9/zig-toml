@@ -4,6 +4,7 @@ const toml = @import("toml.zig");
 pub const ParseError = error{
     OpenFileError,
     InvalidTableNesting,
+    InvalidValue,
     InvalidKeyValuePair,
     InvalidTableHeader,
     DuplicateKeyValuePair,
@@ -131,14 +132,13 @@ pub const Parser = struct {
             }
             self.advance();
         }
-        return ParseError.InvalidKeyValuePair;
+        return ParseError.InvalidValue;
     }
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
         var array = std.ArrayList(toml.TomlValue).init(self.alloc);
         self.advance();
         self.skip_whitespace();
-
         while (self.current()) |c| {
             if (c == ']') {
                 self.advance();
@@ -152,16 +152,32 @@ pub const Parser = struct {
                 self.skip_whitespace();
             }
         }
-        return ParseError.InvalidKeyValuePair;
+        return ParseError.InvalidValue;
     }
 
-    fn parse_inline_table(_: *Parser) !toml.TomlTable {
-        return ParseError.NotImplemented;
+    fn parse_inline_table(self: *Parser) !toml.TomlTable {
+        var table = toml.TomlTable.init(self.alloc);
+        self.advance();
+        self.skip_whitespace();
+        while (self.current()) |c| {
+            if (c == '}') {
+                self.advance();
+                return table;
+            }
+            const kv = try self.parse_key_value();
+            try add_key_value(&table, kv);
+            self.skip_whitespace();
+            if (self.current() == ',') {
+                self.advance();
+                self.skip_whitespace();
+            }
+        }
+        return ParseError.InvalidValue;
     }
 
     fn parse_scalar(self: *Parser) !toml.TomlValue {
         const start = self.index;
-        _ = self.advance_until_any(",\n");
+        _ = self.advance_until_any(",]}\n");
         const str = self.content[start..self.index];
         if (interpret_int(str)) |x| {
             return toml.TomlValue{ .int = x };

@@ -5,6 +5,7 @@ pub const ParseError = error{
     OpenFileError,
     InvalidTableNesting,
     InvalidKeyValuePair,
+    InvalidTableHeader,
     DuplicateKeyValuePair,
 };
 
@@ -58,7 +59,7 @@ pub const Parser = struct {
                     self.nested = false;
                     break;
                 }
-                const header = self.parse_table_header();
+                const header = try self.parse_table_header();
                 const table = try get_or_create_table(root, header, self.alloc);
                 self.nested = true;
                 try self.parse_table(table);
@@ -70,17 +71,10 @@ pub const Parser = struct {
         }
     }
 
-    fn parse_table_header(self: *Parser) []const u8 {
+    fn parse_table_header(self: *Parser) ![]const u8 {
         self.advance();
         const start = self.index;
-        while (self.current()) |c| {
-            if (c == ']') {
-                const header = self.content[start..self.index];
-                self.advance();
-                return header;
-            }
-            self.advance();
-        }
+        if (!self.advance_until(']')) return ParseError.InvalidTableHeader;
         return self.content[start..self.index];
     }
 
@@ -141,6 +135,14 @@ pub const Parser = struct {
 
     fn advance(self: *Parser) void {
         if (self.index < self.content.len) self.index += 1;
+    }
+
+    fn advance_until(self: *Parser, char: u8) bool {
+        while (self.current()) |c| {
+            if (c == char) return true;
+            self.advance();
+        }
+        return false;
     }
 
     fn skip_whitespace(self: *Parser) void {

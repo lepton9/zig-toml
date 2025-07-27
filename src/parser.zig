@@ -247,12 +247,12 @@ fn add_key_value(root: *toml.TomlTable, key_value: KeyValue) !void {
     entry.key_ptr.* = key_value.key;
 }
 
-fn interpret_int(_: []const u8) ?i64 {
-    return null;
+fn interpret_int(str: []const u8) ?i64 {
+    return std.fmt.parseInt(i64, str, 0) catch return null;
 }
 
-fn interpret_float(_: []const u8) ?f64 {
-    return null;
+fn interpret_float(str: []const u8) ?f64 {
+    return std.fmt.parseFloat(f64, str) catch return null;
 }
 
 fn interpret_bool(str: []const u8) ?bool {

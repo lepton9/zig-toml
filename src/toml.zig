@@ -61,6 +61,33 @@ pub const TomlValue = union(enum) {
             .table => self.table,
         };
     }
+
+    pub fn print(self: *const TomlValue) void {
+        switch (self.*) {
+            .string => |v| std.debug.print("\"{s}\"", .{v}),
+            .int => |v| std.debug.print("{}", .{v}),
+            .float => |v| std.debug.print("{}", .{v}),
+            .bool => |v| std.debug.print("{}", .{v}),
+            .array => |ar| {
+                std.debug.print("[", .{});
+                for (ar.items) |e| {
+                    e.print();
+                    std.debug.print(",", .{});
+                }
+                std.debug.print("]", .{});
+            },
+            .table => |tab| {
+                std.debug.print("{{", .{});
+                var it = tab.iterator();
+                while (it.next()) |e| {
+                    std.debug.print("{s}:", .{e.key_ptr.*});
+                    e.value_ptr.print();
+                    std.debug.print(",", .{});
+                }
+                std.debug.print("}}", .{});
+            },
+        }
+    }
 };
 
 pub const Toml = struct {

@@ -75,7 +75,7 @@ pub const Parser = struct {
     fn parse_table_header(self: *Parser) ![]const u8 {
         self.advance();
         const start = self.index;
-        if (!self.advance_until(']')) return ParseError.InvalidTableHeader;
+        if (!self.advance_until_any("]")) return ParseError.InvalidTableHeader;
         const header = self.content[start..self.index];
         self.advance();
         return header;
@@ -87,7 +87,8 @@ pub const Parser = struct {
             if (c == '=') {
                 const key = self.content[start..self.index];
                 // TODO: handle dotted keys and add a table
-                const key_a = try self.alloc.dupe(u8, key);
+                // var parts = std.mem.tokenizeSequence(u8, key, ".");
+                const key_a = try self.alloc.dupe(u8, std.mem.trim(u8, key, " \t"));
                 self.advance();
                 self.skip_whitespace();
                 const value = try self.parse_value();
@@ -103,7 +104,7 @@ pub const Parser = struct {
         return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
     }
 
-    fn parse_value(self: *Parser) !toml.TomlValue {
+    fn parse_value(self: *Parser) anyerror!toml.TomlValue {
         self.skip_whitespace();
         if (self.starts_with("\"")) {
             const str = try self.parse_regular_string("\"");
@@ -133,8 +134,25 @@ pub const Parser = struct {
         return ParseError.InvalidKeyValuePair;
     }
 
-    fn parse_array(_: *Parser) !std.ArrayList(toml.TomlValue) {
-        return ParseError.NotImplemented;
+    fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
+        var array = std.ArrayList(toml.TomlValue).init(self.alloc);
+        self.advance();
+        self.skip_whitespace();
+
+        while (self.current()) |c| {
+            if (c == ']') {
+                self.advance();
+                return array;
+            }
+            const value = try self.parse_value();
+            try array.append(value);
+            self.skip_whitespace();
+            if (self.current() == ',') {
+                self.advance();
+                self.skip_whitespace();
+            }
+        }
+        return ParseError.InvalidKeyValuePair;
     }
 
     fn parse_inline_table(_: *Parser) !toml.TomlTable {
@@ -143,7 +161,7 @@ pub const Parser = struct {
 
     fn parse_scalar(self: *Parser) !toml.TomlValue {
         const start = self.index;
-        _ = self.advance_until('\n');
+        _ = self.advance_until_any(",\n");
         const str = self.content[start..self.index];
         if (interpret_int(str)) |x| {
             return toml.TomlValue{ .int = x };

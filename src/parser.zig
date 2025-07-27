@@ -190,12 +190,12 @@ fn get_or_create_table(
     var current = root;
     var parts = std.mem.tokenizeSequence(u8, path, ".");
     while (parts.next()) |part| {
-        const key = try allocator.dupe(u8, std.mem.trim(u8, part, " \t"));
+        const key = std.mem.trim(u8, part, " \t");
         const entry = try current.getOrPut(key);
         if (!entry.found_existing) {
             const sub_table = toml.TomlValue.init_table(allocator);
             entry.value_ptr.* = sub_table;
-            entry.key_ptr.* = key;
+            entry.key_ptr.* = try allocator.dupe(u8, key);
             current = &entry.value_ptr.table;
         } else if (entry.value_ptr.* != .table) {
             return ParseError.InvalidTableNesting;

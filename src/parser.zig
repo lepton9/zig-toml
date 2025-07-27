@@ -17,6 +17,7 @@ pub const Parser = struct {
     alloc: std.mem.Allocator,
     content: []const u8 = undefined,
     index: usize = 0,
+    nested: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !*Parser {
         const parser = try allocator.create(Parser);
@@ -25,6 +26,7 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *Parser) void {
+        self.alloc.free(self.content);
         self.alloc.destroy(self);
     }
 
@@ -33,7 +35,6 @@ pub const Parser = struct {
         defer file.close();
         const file_size = try file.getEndPos();
         const buffer = try self.alloc.alloc(u8, file_size);
-        defer self.alloc.free(buffer);
         _ = try file.readAll(buffer);
         return try self.parse_string(buffer);
     }
@@ -53,13 +54,17 @@ pub const Parser = struct {
         self.skip_comments();
         while (self.current()) |c| {
             if (c == '[') {
+                if (self.nested) {
+                    self.nested = false;
+                    break;
+                }
                 const header = self.parse_table_header();
                 const table = try get_or_create_table(root, header, self.alloc);
-                var table_value = toml.TomlValue{ .table = table.* };
-                try self.parse_table(&table_value.table);
+                self.nested = true;
+                try self.parse_table(table);
             } else {
-                const key_value = try self.parse_key_value();
-                try add_key_value(root, key_value);
+                const kv = try self.parse_key_value();
+                try add_key_value(root, kv);
             }
             self.skip_comments();
         }
@@ -84,10 +89,11 @@ pub const Parser = struct {
         while (self.current()) |c| {
             if (c == '=') {
                 const key = self.content[start..self.index];
+                const key_a = try self.alloc.dupe(u8, key);
                 self.advance();
                 self.skip_whitespace();
-                const value = self.parse_value();
-                return KeyValue{ .key = key, .value = toml.TomlValue{ .string = value } };
+                const value = try self.parse_value();
+                return KeyValue{ .key = key_a, .value = value };
             }
             self.advance();
         }
@@ -95,12 +101,34 @@ pub const Parser = struct {
     }
 
     fn starts_with(self: *Parser, prefix: []const u8) bool {
-        if (self.pos + prefix.len > self.input.len) return false;
-        return std.mem.eql(u8, self.input[self.pos .. self.pos + prefix.len], prefix);
+        if (self.index + prefix.len > self.content.len) return false;
+        return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
     }
 
     fn parse_value(self: *Parser) !toml.TomlValue {
         self.skip_whitespace();
+        if (self.starts_with("\"")) {
+            const str = try self.parse_regular_string("\"");
+            const str_a = try self.alloc.alloc(u8, str.len);
+            @memcpy(str_a, str);
+            return toml.TomlValue{ .string = str_a };
+        }
+
+        return error.NotImplemented;
+    }
+
+    fn parse_regular_string(self: *Parser, delimiter: []const u8) ![]const u8 {
+        self.advance();
+        const start = self.index;
+        while (self.current()) |_| {
+            if (self.starts_with(delimiter)) {
+                const str_value = self.content[start..self.index];
+                self.advance();
+                return str_value;
+            }
+            self.advance();
+        }
+        return ParseError.InvalidKeyValuePair;
     }
 
     pub fn current(self: *const Parser) ?u8 {
@@ -158,15 +186,16 @@ fn get_or_create_table(
     root: *toml.TomlTable,
     path: []const u8,
     allocator: std.mem.Allocator,
-) !*std.StringHashMap(toml.TomlValue) {
+) !*toml.TomlTable {
     var current = root;
     var parts = std.mem.tokenizeSequence(u8, path, ".");
     while (parts.next()) |part| {
-        const key = std.mem.trim(u8, part, " \t");
+        const key = try allocator.dupe(u8, std.mem.trim(u8, part, " \t"));
         const entry = try current.getOrPut(key);
         if (!entry.found_existing) {
             const sub_table = toml.TomlValue.init_table(allocator);
             entry.value_ptr.* = sub_table;
+            entry.key_ptr.* = key;
             current = &entry.value_ptr.table;
         } else if (entry.value_ptr.* != .table) {
             return ParseError.InvalidTableNesting;
@@ -183,4 +212,5 @@ fn add_key_value(root: *toml.TomlTable, key_value: KeyValue) !void {
         return ParseError.DuplicateKeyValuePair;
     }
     entry.value_ptr.* = key_value.value;
+    entry.key_ptr.* = key_value.key;
 }

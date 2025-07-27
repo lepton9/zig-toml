@@ -28,6 +28,7 @@ pub const TomlValue = union(enum) {
                 var it = table.iterator();
                 while (it.next()) |e| {
                     e.value_ptr.deinit(alloc);
+                    alloc.free(e.key_ptr.*);
                 }
                 table.deinit();
             },

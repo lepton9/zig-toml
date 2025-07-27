@@ -7,6 +7,7 @@ pub const ParseError = error{
     InvalidKeyValuePair,
     InvalidTableHeader,
     DuplicateKeyValuePair,
+    NotImplemented,
 };
 
 const KeyValue = struct {
@@ -85,6 +86,7 @@ pub const Parser = struct {
         while (self.current()) |c| {
             if (c == '=') {
                 const key = self.content[start..self.index];
+                // TODO: handle dotted keys and add a table
                 const key_a = try self.alloc.dupe(u8, key);
                 self.advance();
                 self.skip_whitespace();
@@ -108,9 +110,13 @@ pub const Parser = struct {
             const str_a = try self.alloc.alloc(u8, str.len);
             @memcpy(str_a, str);
             return toml.TomlValue{ .string = str_a };
+        } else if (self.starts_with("[")) {
+            return toml.TomlValue{ .array = try self.parse_array() };
+        } else if (self.starts_with("{")) {
+            return toml.TomlValue{ .table = try self.parse_inline_table() };
         }
-
-        return error.NotImplemented;
+        return try self.parse_scalar();
+        // return error.NotImplemented;
     }
 
     fn parse_regular_string(self: *Parser, delimiter: []const u8) ![]const u8 {
@@ -125,6 +131,28 @@ pub const Parser = struct {
             self.advance();
         }
         return ParseError.InvalidKeyValuePair;
+    }
+
+    fn parse_array(_: *Parser) !std.ArrayList(toml.TomlValue) {
+        return ParseError.NotImplemented;
+    }
+
+    fn parse_inline_table(_: *Parser) !toml.TomlTable {
+        return ParseError.NotImplemented;
+    }
+
+    fn parse_scalar(self: *Parser) !toml.TomlValue {
+        const start = self.index;
+        _ = self.advance_until('\n');
+        const str = self.content[start..self.index];
+        if (interpret_int(str)) |x| {
+            return toml.TomlValue{ .int = x };
+        } else if (interpret_float(str)) |x| {
+            return toml.TomlValue{ .float = x };
+        } else if (interpret_bool(str)) |x| {
+            return toml.TomlValue{ .bool = x };
+        }
+        return ParseError.NotImplemented;
     }
 
     pub fn current(self: *const Parser) ?u8 {
@@ -217,4 +245,18 @@ fn add_key_value(root: *toml.TomlTable, key_value: KeyValue) !void {
     }
     entry.value_ptr.* = key_value.value;
     entry.key_ptr.* = key_value.key;
+}
+
+fn interpret_int(_: []const u8) ?i64 {
+    return null;
+}
+
+fn interpret_float(_: []const u8) ?f64 {
+    return null;
+}
+
+fn interpret_bool(str: []const u8) ?bool {
+    if (std.mem.eql(u8, "true", str)) return true;
+    if (std.mem.eql(u8, "false", str)) return false;
+    return null;
 }

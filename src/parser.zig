@@ -167,9 +167,17 @@ pub const Parser = struct {
         if (self.index < self.content.len) self.index += 1;
     }
 
-    fn advance_until(self: *Parser, char: u8) bool {
+    fn advance_until_any(self: *Parser, chars: []const u8) bool {
         while (self.current()) |c| {
-            if (c == char) return true;
+            if (contains(chars, c)) return true;
+            self.advance();
+        }
+        return false;
+    }
+
+    fn advance_until_delim(self: *Parser, delim: []const u8) bool {
+        while (self.current()) |_| {
+            if (self.starts_with(delim)) return true;
             self.advance();
         }
         return false;
@@ -259,4 +267,11 @@ fn interpret_bool(str: []const u8) ?bool {
     if (std.mem.eql(u8, "true", str)) return true;
     if (std.mem.eql(u8, "false", str)) return false;
     return null;
+}
+
+fn contains(str: []const u8, c: u8) bool {
+    for (str) |char| {
+        if (char == c) return true;
+    }
+    return false;
 }

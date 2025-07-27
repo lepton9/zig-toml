@@ -75,7 +75,9 @@ pub const Parser = struct {
         self.advance();
         const start = self.index;
         if (!self.advance_until(']')) return ParseError.InvalidTableHeader;
-        return self.content[start..self.index];
+        const header = self.content[start..self.index];
+        self.advance();
+        return header;
     }
 
     fn parse_key_value(self: *Parser) !KeyValue {

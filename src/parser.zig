@@ -68,7 +68,7 @@ pub const Parser = struct {
                 try self.parse_table(table);
             } else {
                 const kv = try self.parse_key_value();
-                try add_key_value(root, kv);
+                try add_key_value(root, kv, self.alloc);
             }
             self.skip_comments();
         }
@@ -108,7 +108,7 @@ pub const Parser = struct {
             u8,
             std.mem.trim(u8, keys[if (last_dot) |i| i + 1 else 0..], " \t"),
         );
-        try add_key_value(inner_table, .{ .key = last_key, .value = value });
+        try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
         return root;
     }
 
@@ -204,7 +204,7 @@ pub const Parser = struct {
                 return table;
             }
             const kv = try self.parse_key_value();
-            try add_key_value(&table, kv);
+            try add_key_value(&table, kv, self.alloc);
             self.skip_whitespace();
             if (self.current() == ',') {
                 self.advance();
@@ -322,9 +322,27 @@ fn get_or_create_table(
     return current;
 }
 
-fn add_key_value(root: *toml.TomlTable, key_value: KeyValue) !void {
+fn nested_key_value(key_value: *const KeyValue) ?KeyValue {
+    if (key_value.value != .table) return null;
+    const table = key_value.value.table;
+    var it = table.iterator();
+    while (it.next()) |e| {
+        return KeyValue{ .key = e.key_ptr.*, .value = e.value_ptr.* };
+    }
+    return null;
+}
+
+fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
     const entry = try root.getOrPut(key_value.key);
     if (entry.found_existing) {
+        if (entry.value_ptr.* == .table) {
+            if (nested_key_value(&key_value)) |nested| {
+                var table = key_value.value.table;
+                defer table.deinit();
+                defer alloc.free(key_value.key);
+                return try add_key_value(&entry.value_ptr.table, nested, alloc);
+            }
+        }
         return ParseError.DuplicateKeyValuePair;
     }
     entry.value_ptr.* = key_value.value;

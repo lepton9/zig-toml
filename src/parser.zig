@@ -82,18 +82,57 @@ pub const Parser = struct {
         return header;
     }
 
+    fn build_nested_table(
+        allocator: std.mem.Allocator,
+        dotted_key: []const u8,
+        value: toml.TomlValue,
+    ) !toml.TomlTable {
+        const parts = std.mem.tokenizeSequence(u8, dotted_key, ".");
+        var part_list = std.ArrayList([]const u8).init(allocator);
+        defer part_list.deinit();
+
+        var iter = parts;
+        while (iter.next()) |part| {
+            try part_list.append(std.mem.trim(u8, part, " \t"));
+        }
+
+        var root = toml.TomlTable.init(allocator);
+        const keys = try std.mem.join(allocator, ".", part_list.items[1 .. part_list.items.len - 1]);
+        defer allocator.free(keys);
+        const inner_table = if (part_list.items.len >= 3) try get_or_create_table(&root, keys, allocator) else &root;
+
+        const last_key = try allocator.dupe(u8, part_list.items[part_list.items.len - 1]);
+        try add_key_value(inner_table, .{ .key = last_key, .value = value });
+        return root;
+    }
+
     fn parse_key_value(self: *Parser) !KeyValue {
         const start = self.index;
         while (self.current()) |c| {
             if (c == '=') {
                 const key = self.content[start..self.index];
-                // TODO: handle dotted keys and add a table
-                // var parts = std.mem.tokenizeSequence(u8, key, ".");
-                const key_a = try self.alloc.dupe(u8, std.mem.trim(u8, key, " \t"));
                 self.advance();
                 self.skip_whitespace();
                 const value = try self.parse_value();
-                return KeyValue{ .key = key_a, .value = value };
+
+                var parts = std.mem.tokenizeSequence(u8, key, ".");
+                const is_dotted = blk: {
+                    _ = parts.next();
+                    break :blk parts.next() != null;
+                };
+                parts.reset();
+                if (is_dotted) {
+                    const root_key = std.mem.trim(u8, parts.next().?, " \t");
+                    const root_key_a = try self.alloc.dupe(u8, root_key);
+                    const table = try build_nested_table(self.alloc, key, value);
+                    return KeyValue{
+                        .key = root_key_a,
+                        .value = toml.TomlValue{ .table = table },
+                    };
+                } else {
+                    const key_a = try self.alloc.dupe(u8, std.mem.trim(u8, key, " \t"));
+                    return KeyValue{ .key = key_a, .value = value };
+                }
             }
             self.advance();
         }

@@ -92,7 +92,7 @@ pub const Parser = struct {
         const keys = std.mem.trim(u8, dotted_key, " \t");
         if (keys.len == 0) return ParseError.InvalidKey;
         var root = toml.TomlTable.init(allocator);
-        const last_dot = std.mem.lastIndexOf(u8, keys, ".");
+        const last_dot = last_indexof_qa(keys, '.');
         const inner_table = blk: {
             if (last_dot) |ind| {
                 if (ind == keys.len - 1) return ParseError.InvalidKey;
@@ -121,7 +121,7 @@ pub const Parser = struct {
                 self.advance();
                 self.skip_whitespace();
                 const value = try self.parse_value();
-                const first_dot_ind = std.mem.indexOf(u8, key, ".");
+                const first_dot_ind = indexof_qa(key, '.');
                 if (first_dot_ind) |i| {
                     const root_key = trim_key(key[0..i]);
                     if (root_key.len == 0) return ParseError.InvalidKey;
@@ -301,7 +301,7 @@ pub const Parser = struct {
 
 fn get_or_create_table(
     root: *toml.TomlTable,
-    path: []const u8,
+    keys: []const u8,
     allocator: std.mem.Allocator,
 ) !*toml.TomlTable {
     var current = root;
@@ -337,11 +337,6 @@ fn nested_key_value(key_value: *const KeyValue) ?KeyValue {
 }
 
 fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
-    errdefer {
-        var value = key_value.value;
-        alloc.free(key_value.key);
-        value.deinit(alloc);
-    }
     const entry = try root.getOrPut(key_value.key);
     if (entry.found_existing) {
         if (entry.value_ptr.* == .table) {
@@ -352,6 +347,9 @@ fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allo
                 return try add_key_value(&entry.value_ptr.table, nested, alloc);
             }
         }
+        var value = key_value.value;
+        alloc.free(key_value.key);
+        value.deinit(alloc);
         return ParseError.DuplicateKeyValuePair;
     }
     entry.value_ptr.* = key_value.value;
@@ -393,4 +391,41 @@ fn strip_quotes(s: []const u8) []const u8 {
         if (std.mem.trim(u8, str, " \t").len == str.len) return str;
     }
     return s;
+}
+
+fn is_quote(char: u8) bool {
+    return char == '"' or char == '\'';
+}
+
+fn handle_quote(quote: *?u8, c: u8) void {
+    if (quote.* == null) {
+        quote.* = c;
+    } else if (quote.* == c) {
+        quote.* = null;
+    }
+}
+
+fn last_indexof_qa(str: []const u8, char: u8) ?usize {
+    var quote: ?u8 = null;
+    for (0..str.len) |i| {
+        const c = str[str.len - 1 - i];
+        if (is_quote(c)) {
+            handle_quote(&quote, c);
+        } else if (c == char and quote == null) {
+            return str.len - 1 - i;
+        }
+    }
+    return null;
+}
+
+fn indexof_qa(str: []const u8, char: u8) ?usize {
+    var quote: ?u8 = null;
+    for (str, 0..) |c, i| {
+        if (is_quote(c)) {
+            handle_quote(&quote, c);
+        } else if (c == char and quote == null) {
+            return i;
+        }
+    }
+    return null;
 }

@@ -9,6 +9,7 @@ pub const ParseError = error{
     InvalidKeyValuePair,
     InvalidTableHeader,
     DuplicateKeyValuePair,
+    DuplicateTableHeader,
     NotImplemented,
 };
 
@@ -64,7 +65,7 @@ pub const Parser = struct {
                     break;
                 }
                 const header = try self.parse_table_header();
-                const table = try get_or_create_table(root, header, self.alloc);
+                const table = try create_table(root, header, self.alloc);
                 self.nested = true;
                 try self.parse_table(table);
             } else {
@@ -326,6 +327,37 @@ fn get_or_create_table(
             current = &entry.value_ptr.table;
         }
     }
+    return current;
+}
+
+fn create_table(
+    root: *toml.TomlTable,
+    keys: []const u8,
+    allocator: std.mem.Allocator,
+) !*toml.TomlTable {
+    var current = root;
+    var created = false;
+    const parts = try split_quote_aware(keys, '.', allocator);
+    defer allocator.free(parts);
+    for (parts) |part| {
+        const key = trim_key(part);
+        if (key.len == 0) {
+            return ParseError.InvalidTableHeader;
+        }
+        const entry = current.getEntry(key);
+        if (entry) |e| {
+            if (e.value_ptr.* != .table) return ParseError.InvalidTableHeader;
+            current = &e.value_ptr.table;
+        } else {
+            const k = try allocator.dupe(u8, key);
+            const e = try current.getOrPut(k);
+            e.value_ptr.* = toml.TomlValue.init_table(allocator);
+            e.key_ptr.* = k;
+            current = &e.value_ptr.table;
+            created = true;
+        }
+    }
+    if (!created) return ParseError.DuplicateTableHeader;
     return current;
 }
 

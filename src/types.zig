@@ -4,6 +4,10 @@ pub const TypeError = error{
     InvalidYear,
     InvalidMonth,
     InvalidDay,
+    InvalidHour,
+    InvalidMinute,
+    InvalidSecond,
+    InvalidNanoSecond,
 };
 
 pub const Date = struct {
@@ -50,11 +54,33 @@ pub fn interpret_date(str: []const u8) !?Date {
         .month = std.fmt.parseInt(u4, str[5..7], 10) catch return TypeError.InvalidMonth,
         .day = std.fmt.parseInt(u5, str[8..], 10) catch return TypeError.InvalidDay,
     };
-    if (d.month > 12 or d.month == 0) return TypeError.InvalidMonth;
-    if (d.day > 31 or d.day == 0) return TypeError.InvalidDay;
+    try validate_date(d);
     return d;
 }
 
-pub fn interpret_time(_: []const u8) !?Time {
-    return null;
+pub fn interpret_time(str: []const u8) !?Time {
+    if (str.len < 8 or str[2] != ':' or str[5] != ':') return null;
+    var t: Time = .{
+        .hour = std.fmt.parseInt(u5, str[0..2], 10) catch return TypeError.InvalidHour,
+        .minute = std.fmt.parseInt(u6, str[3..5], 10) catch return TypeError.InvalidMinute,
+        .second = std.fmt.parseInt(u6, str[6..8], 10) catch return TypeError.InvalidSecond,
+    };
+    if (str.len > 8) {
+        if (str[8] != '.' or str.len > 18) return TypeError.InvalidNanoSecond;
+        const fraction = std.fmt.parseInt(u30, str[9..], 10) catch return TypeError.InvalidNanoSecond;
+        t.nanosecond = @truncate(fraction * (1000000000 / std.math.pow(u64, 10, str.len - 9)));
+    }
+    try validate_time(t);
+    return t;
+}
+
+fn validate_date(date: Date) TypeError!void {
+    if (date.month > 12 or date.month == 0) return TypeError.InvalidMonth;
+    if (date.day > 31 or date.day == 0) return TypeError.InvalidDay;
+}
+
+fn validate_time(time: Time) TypeError!void {
+    if (time.hour > 23) return TypeError.InvalidHour;
+    if (time.minute > 59) return TypeError.InvalidMinute;
+    if (time.second > 59) return TypeError.InvalidSecond;
 }

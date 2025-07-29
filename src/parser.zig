@@ -1,5 +1,6 @@
 const std = @import("std");
 const toml = @import("toml.zig");
+const types = @import("types.zig");
 
 pub const ParseError = error{
     OpenFileError,
@@ -224,11 +225,11 @@ pub const Parser = struct {
         const start = self.index;
         _ = self.advance_until_any("#,]}\n");
         const str = std.mem.trim(u8, self.content[start..self.index], " \t");
-        if (interpret_int(str)) |x| {
+        if (types.interpret_int(str)) |x| {
             return toml.TomlValue{ .int = x };
-        } else if (interpret_float(str)) |x| {
+        } else if (types.interpret_float(str)) |x| {
             return toml.TomlValue{ .float = x };
-        } else if (interpret_bool(str)) |x| {
+        } else if (types.interpret_bool(str)) |x| {
             return toml.TomlValue{ .bool = x };
         }
         return ParseError.NotImplemented;
@@ -388,20 +389,6 @@ fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allo
     }
     entry.value_ptr.* = key_value.value;
     entry.key_ptr.* = key_value.key;
-}
-
-fn interpret_int(str: []const u8) ?i64 {
-    return std.fmt.parseInt(i64, str, 0) catch return null;
-}
-
-fn interpret_float(str: []const u8) ?f64 {
-    return std.fmt.parseFloat(f64, str) catch return null;
-}
-
-fn interpret_bool(str: []const u8) ?bool {
-    if (std.mem.eql(u8, "true", str)) return true;
-    if (std.mem.eql(u8, "false", str)) return false;
-    return null;
 }
 
 fn contains(str: []const u8, c: u8) bool {

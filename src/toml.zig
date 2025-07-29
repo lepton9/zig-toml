@@ -1,4 +1,5 @@
 const std = @import("std");
+const types = @import("types.zig");
 
 pub const TomlTable = std.StringHashMap(TomlValue);
 
@@ -7,6 +8,9 @@ pub const TomlValue = union(enum) {
     float: f64,
     bool: bool,
     string: []const u8,
+    date: types.Date,
+    time: types.Time,
+    datetime: types.DateTime,
     array: std.ArrayList(TomlValue),
     table: TomlTable,
 

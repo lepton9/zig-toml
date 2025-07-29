@@ -120,12 +120,14 @@ pub const Parser = struct {
                 const key = std.mem.trim(u8, self.content[start..self.index], " \t");
                 self.advance();
                 self.skip_whitespace();
-                const value = try self.parse_value();
+                var value = try self.parse_value();
+                errdefer value.deinit(self.alloc);
                 const first_dot_ind = indexof_qa(key, '.');
                 if (first_dot_ind) |i| {
                     const root_key = trim_key(key[0..i]);
                     if (root_key.len == 0) return ParseError.InvalidKey;
                     const root_key_a = try self.alloc.dupe(u8, root_key);
+                    errdefer self.alloc.free(root_key_a);
                     const table = try build_nested_table(self.alloc, key[i + 1 ..], value);
                     return KeyValue{
                         .key = root_key_a,
@@ -305,8 +307,9 @@ fn get_or_create_table(
     allocator: std.mem.Allocator,
 ) !*toml.TomlTable {
     var current = root;
-    var parts = std.mem.splitSequence(u8, path, ".");
-    while (parts.next()) |part| {
+    const parts = try split_quote_aware(keys, '.', allocator);
+    defer allocator.free(parts);
+    for (parts) |part| {
         const key = trim_key(part);
         if (key.len == 0) {
             return ParseError.InvalidKey;
@@ -428,4 +431,29 @@ fn indexof_qa(str: []const u8, char: u8) ?usize {
         }
     }
     return null;
+}
+
+fn split_quote_aware(
+    str: []const u8,
+    delim: u8,
+    allocator: std.mem.Allocator,
+) ![]const []const u8 {
+    var parts = std.ArrayList([]const u8).init(allocator);
+    var start: usize = 0;
+    while (indexof_qa(str, delim)) |ind| {
+        const part = str[start..ind];
+        try parts.append(std.mem.trim(u8, part, " \t"));
+        start = ind + 1;
+    }
+    try parts.append(std.mem.trim(u8, str[start..], " \t"));
+    return try parts.toOwnedSlice();
+}
+
+fn valid_key_char(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '-' or c == '_';
+}
+
+// TODO:
+fn valid_key(_: []const u8) bool {
+    return false;
 }

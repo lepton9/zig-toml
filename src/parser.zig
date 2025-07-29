@@ -231,6 +231,12 @@ pub const Parser = struct {
             return toml.TomlValue{ .float = x };
         } else if (types.interpret_bool(str)) |x| {
             return toml.TomlValue{ .bool = x };
+        } else if (try types.interpret_datetime(str)) |x| {
+            return toml.TomlValue{ .datetime = x };
+        } else if (try types.interpret_date(str)) |x| {
+            return toml.TomlValue{ .date = x };
+        } else if (try types.interpret_time(str)) |x| {
+            return toml.TomlValue{ .time = x };
         }
         return ParseError.NotImplemented;
     }

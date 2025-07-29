@@ -1,5 +1,11 @@
 const std = @import("std");
 
+pub const TypeError = error{
+    InvalidYear,
+    InvalidMonth,
+    InvalidDay,
+};
+
 pub const Date = struct {
     year: u16,
     month: u4,
@@ -33,6 +39,22 @@ pub fn interpret_bool(str: []const u8) ?bool {
     return null;
 }
 
-pub fn interpret_date(_: []const u8) ?Date {}
-pub fn interpret_time(_: []const u8) ?Time {}
-pub fn interpret_datetime(_: []const u8) ?DateTime {}
+pub fn interpret_datetime(_: []const u8) !?DateTime {
+    return null;
+}
+
+pub fn interpret_date(str: []const u8) !?Date {
+    if (str.len != 10 or str[4] != '-' or str[7] != '-') return null;
+    const d: Date = .{
+        .year = std.fmt.parseInt(u16, str[0..4], 10) catch return TypeError.InvalidYear,
+        .month = std.fmt.parseInt(u4, str[5..7], 10) catch return TypeError.InvalidMonth,
+        .day = std.fmt.parseInt(u5, str[8..], 10) catch return TypeError.InvalidDay,
+    };
+    if (d.month > 12 or d.month == 0) return TypeError.InvalidMonth;
+    if (d.day > 31 or d.day == 0) return TypeError.InvalidDay;
+    return d;
+}
+
+pub fn interpret_time(_: []const u8) !?Time {
+    return null;
+}

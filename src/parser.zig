@@ -389,7 +389,7 @@ fn trim_key(key: []const u8) []const u8 {
 }
 
 fn strip_quotes(s: []const u8) []const u8 {
-    if (is_quoted(s)) {
+    if (s.len > 2 and is_quoted(s)) {
         const str = s[1 .. s.len - 1];
         if (std.mem.trim(u8, str, " \t").len == str.len) return str;
     }
@@ -440,12 +440,14 @@ fn split_quote_aware(
 ) ![]const []const u8 {
     var parts = std.ArrayList([]const u8).init(allocator);
     var start: usize = 0;
-    while (indexof_qa(str, delim)) |ind| {
-        const part = str[start..ind];
+    while (indexof_qa(str[start..], delim)) |ind| {
+        const part = str[start .. start + ind];
         try parts.append(std.mem.trim(u8, part, " \t"));
-        start = ind + 1;
+        start += ind + 1;
     }
-    try parts.append(std.mem.trim(u8, str[start..], " \t"));
+    if (start < str.len) {
+        try parts.append(std.mem.trim(u8, str[start..], " \t"));
+    }
     return try parts.toOwnedSlice();
 }
 

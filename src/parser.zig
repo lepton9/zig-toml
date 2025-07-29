@@ -120,7 +120,6 @@ pub const Parser = struct {
             if (c == '=') {
                 const key = std.mem.trim(u8, self.content[start..self.index], " \t");
                 self.advance();
-                self.skip_whitespace();
                 var value = try self.parse_value();
                 errdefer value.deinit(self.alloc);
                 const first_dot_ind = indexof_qa(key, '.');
@@ -223,8 +222,8 @@ pub const Parser = struct {
 
     fn parse_scalar(self: *Parser) !toml.TomlValue {
         const start = self.index;
-        _ = self.advance_until_any(",]}\n");
-        const str = self.content[start..self.index];
+        _ = self.advance_until_any("#,]}\n");
+        const str = std.mem.trim(u8, self.content[start..self.index], " \t");
         if (interpret_int(str)) |x| {
             return toml.TomlValue{ .int = x };
         } else if (interpret_float(str)) |x| {

@@ -72,6 +72,22 @@ pub const TomlValue = union(enum) {
             .int => |v| std.debug.print("{}", .{v}),
             .float => |v| std.debug.print("{}", .{v}),
             .bool => |v| std.debug.print("{}", .{v}),
+            .date => |v| std.debug.print("{:0>4}-{:0>2}-{:0>2}", .{ v.year, v.month, v.day }),
+            .time => |v| std.debug.print("{:0>2}:{:0>2}:{:0>2}.{}", .{
+                v.hour,
+                v.minute,
+                v.second,
+                v.nanosecond,
+            }),
+            .datetime => |v| std.debug.print("{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}", .{
+                v.date.year,
+                v.date.month,
+                v.date.day,
+                v.time.hour,
+                v.time.minute,
+                v.time.second,
+                v.time.nanosecond,
+            }),
             .array => |ar| {
                 std.debug.print("[", .{});
                 for (ar.items) |e| {

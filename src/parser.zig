@@ -50,6 +50,7 @@ pub const Parser = struct {
 
     fn parse_root(self: *Parser) !*toml.Toml {
         const root = try toml.Toml.init(self.alloc);
+        errdefer root.deinit();
         try self.parse_table(&root.table.table);
         return root;
     }
@@ -106,7 +107,7 @@ pub const Parser = struct {
         };
         const last_key = try allocator.dupe(
             u8,
-            std.mem.trim(u8, keys[if (last_dot) |i| i + 1 else 0..], " \t"),
+            trim_key(keys[if (last_dot) |i| i + 1 else 0..]),
         );
         try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
         return root;
@@ -122,7 +123,8 @@ pub const Parser = struct {
                 const value = try self.parse_value();
                 const first_dot_ind = std.mem.indexOf(u8, key, ".");
                 if (first_dot_ind) |i| {
-                    const root_key = std.mem.trim(u8, key[0..i], " \t");
+                    const root_key = trim_key(key[0..i]);
+                    if (root_key.len == 0) return ParseError.InvalidKey;
                     const root_key_a = try self.alloc.dupe(u8, root_key);
                     const table = try build_nested_table(self.alloc, key[i + 1 ..], value);
                     return KeyValue{
@@ -130,7 +132,9 @@ pub const Parser = struct {
                         .value = toml.TomlValue{ .table = table },
                     };
                 } else {
-                    const key_a = try self.alloc.dupe(u8, key);
+                    const k = trim_key(key);
+                    if (k.len == 0) return ParseError.InvalidKey;
+                    const key_a = try self.alloc.dupe(u8, k);
                     return KeyValue{ .key = key_a, .value = value };
                 }
             }
@@ -303,7 +307,7 @@ fn get_or_create_table(
     var current = root;
     var parts = std.mem.splitSequence(u8, path, ".");
     while (parts.next()) |part| {
-        const key = std.mem.trim(u8, part, " \t");
+        const key = trim_key(part);
         if (key.len == 0) {
             return ParseError.InvalidKey;
         }
@@ -333,6 +337,11 @@ fn nested_key_value(key_value: *const KeyValue) ?KeyValue {
 }
 
 fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
+    errdefer {
+        var value = key_value.value;
+        alloc.free(key_value.key);
+        value.deinit(alloc);
+    }
     const entry = try root.getOrPut(key_value.key);
     if (entry.found_existing) {
         if (entry.value_ptr.* == .table) {
@@ -368,4 +377,20 @@ fn contains(str: []const u8, c: u8) bool {
         if (char == c) return true;
     }
     return false;
+}
+
+fn is_quoted(s: []const u8) bool {
+    return (s.len >= 2 and (s[0] == '"' and s[s.len - 1] == '"' or s[0] == '\'' and s[s.len - 1] == '\''));
+}
+
+fn trim_key(key: []const u8) []const u8 {
+    return strip_quotes(std.mem.trim(u8, key, " \t"));
+}
+
+fn strip_quotes(s: []const u8) []const u8 {
+    if (is_quoted(s)) {
+        const str = s[1 .. s.len - 1];
+        if (std.mem.trim(u8, str, " \t").len == str.len) return str;
+    }
+    return s;
 }

@@ -11,6 +11,7 @@ pub const ParseError = error{
     InvalidTableHeader,
     InvalidChar,
     InvalidEscapeValue,
+    InvalidUnicode,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
     ErrorEOF,
@@ -203,6 +204,8 @@ pub const Parser = struct {
         const c = self.next() orelse return ParseError.ErrorEOF;
         _ = self.next() orelse return ParseError.ErrorEOF;
         switch (c) {
+            'u' => try self.parse_unicode(4, output),
+            'U' => try self.parse_unicode(8, output),
             'b' => try output.append(0x08),
             'f' => try output.append(0x0c),
             't' => try output.append('\t'),
@@ -219,6 +222,19 @@ pub const Parser = struct {
             },
             else => return ParseError.InvalidEscapeValue,
         }
+    }
+
+    fn parse_unicode(self: *Parser, size: u8, output: *std.ArrayList(u8)) !void {
+        if (self.index + size > self.content.len) return ParseError.ErrorEOF;
+        const cp = std.fmt.parseInt(
+            u21,
+            self.content[self.index .. self.index + size],
+            16,
+        ) catch return ParseError.InvalidUnicode;
+        for (0..size) |_| self.advance();
+        var buf: [4]u8 = undefined;
+        const len = try std.unicode.utf8Encode(cp, buf[0..]);
+        try output.appendSlice(buf[0..len]);
     }
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {

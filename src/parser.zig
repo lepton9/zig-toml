@@ -151,11 +151,6 @@ pub const Parser = struct {
         return ParseError.ErrorEOF;
     }
 
-    fn starts_with(self: *Parser, prefix: []const u8) bool {
-        if (self.index + prefix.len > self.content.len) return false;
-        return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
-    }
-
     fn parse_value(self: *Parser) anyerror!toml.TomlValue {
         self.skip_whitespace();
         if (self.starts_with("\"\"\"")) {
@@ -173,6 +168,11 @@ pub const Parser = struct {
         // return error.NotImplemented;
     }
 
+    fn end_of_string(self: *Parser, delimiter: []const u8) bool {
+        return self.starts_with(delimiter) and
+            !std.mem.eql(u8, delimiter, self.peek(delimiter.len) catch return false);
+    }
+
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
         var output = std.ArrayList(u8).init(self.alloc);
         errdefer output.deinit();
@@ -183,7 +183,7 @@ pub const Parser = struct {
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {
-                    if (self.starts_with(delimiter)) {
+                    if (self.end_of_string(delimiter)) {
                         for (0..delimiter.len) |_| self.advance();
                         return output.toOwnedSlice();
                     }
@@ -324,6 +324,16 @@ pub const Parser = struct {
             self.advance();
         }
         return false;
+    }
+
+    fn starts_with(self: *Parser, prefix: []const u8) bool {
+        if (self.index + prefix.len > self.content.len) return false;
+        return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
+    }
+
+    fn peek(self: *Parser, n: usize) ![]const u8 {
+        if (self.index + 1 + n > self.content.len) return ParseError.ErrorEOF;
+        return self.content[self.index + 1 .. self.index + 1 + n];
     }
 
     fn skip_whitespace(self: *Parser) void {

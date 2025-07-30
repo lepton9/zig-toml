@@ -11,6 +11,7 @@ pub const ParseError = error{
     InvalidTableHeader,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
+    ErrorEOF,
     NotImplemented,
 };
 
@@ -153,11 +154,12 @@ pub const Parser = struct {
 
     fn parse_value(self: *Parser) anyerror!toml.TomlValue {
         self.skip_whitespace();
-        if (self.starts_with("\"")) {
-            const str = try self.parse_regular_string("\"");
-            const str_a = try self.alloc.alloc(u8, str.len);
-            @memcpy(str_a, str);
-            return toml.TomlValue{ .string = str_a };
+        if (self.starts_with("\"\"\"")) {
+            return toml.TomlValue{ .string = try self.parse_string_delim("\"\"\"") };
+        } else if (self.starts_with("'''")) {
+            return toml.TomlValue{ .string = try self.parse_string_delim("'''") };
+        } else if (self.starts_with("\"")) {
+            return toml.TomlValue{ .string = try self.parse_string_delim("\"") };
         } else if (self.starts_with("[")) {
             return toml.TomlValue{ .array = try self.parse_array() };
         } else if (self.starts_with("{")) {
@@ -167,18 +169,43 @@ pub const Parser = struct {
         // return error.NotImplemented;
     }
 
-    fn parse_regular_string(self: *Parser, delimiter: []const u8) ![]const u8 {
-        self.advance();
+    fn parse_string_delim(self: *Parser, delimiter: []const u8) ![]const u8 {
+        const str = try self.parse_string_value(delimiter);
+        const str_a = try self.alloc.alloc(u8, str.len);
+        @memcpy(str_a, str);
+        return str_a;
+    }
+
+    fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
+        for (0..delimiter.len) |_| self.advance();
+        const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
+            std.mem.eql(u8, delimiter, "'''");
         const start = self.index;
-        while (self.current()) |_| {
-            if (self.starts_with(delimiter)) {
-                const str_value = self.content[start..self.index];
-                self.advance();
-                return str_value;
+        var escaped = false;
+        while (self.current()) |c| {
+            if (escaped) {
+                escaped = false;
+            } else {
+                switch (c) {
+                    '\\' => {
+                        escaped = true;
+                    },
+                    '\'', '\"' => {
+                        if (!escaped and self.starts_with(delimiter)) {
+                            const str_value = self.content[start..self.index];
+                            for (0..delimiter.len) |_| self.advance();
+                            return str_value;
+                        }
+                    },
+                    '\n', '\r' => {
+                        if (!is_multiline) return ParseError.InvalidValue;
+                    },
+                    else => {},
+                }
             }
             self.advance();
         }
-        return ParseError.InvalidValue;
+        return ParseError.ErrorEOF;
     }
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
@@ -198,7 +225,7 @@ pub const Parser = struct {
                 self.skip_whitespace();
             }
         }
-        return ParseError.InvalidValue;
+        return ParseError.ErrorEOF;
     }
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
@@ -218,7 +245,7 @@ pub const Parser = struct {
                 self.skip_whitespace();
             }
         }
-        return ParseError.InvalidValue;
+        return ParseError.ErrorEOF;
     }
 
     fn parse_scalar(self: *Parser) !toml.TomlValue {

@@ -146,8 +146,9 @@ pub const Parser = struct {
                 }
             }
             self.advance();
+            self.skip_comments();
         }
-        return ParseError.InvalidKeyValuePair;
+        return ParseError.ErrorEOF;
     }
 
     fn starts_with(self: *Parser, prefix: []const u8) bool {

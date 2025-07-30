@@ -9,6 +9,7 @@ pub const ParseError = error{
     InvalidKey,
     InvalidKeyValuePair,
     InvalidTableHeader,
+    InvalidChar,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
     ErrorEOF,
@@ -155,11 +156,11 @@ pub const Parser = struct {
     fn parse_value(self: *Parser) anyerror!toml.TomlValue {
         self.skip_whitespace();
         if (self.starts_with("\"\"\"")) {
-            return toml.TomlValue{ .string = try self.parse_string_delim("\"\"\"") };
+            return toml.TomlValue{ .string = try self.parse_string_value("\"\"\"") };
         } else if (self.starts_with("'''")) {
-            return toml.TomlValue{ .string = try self.parse_string_delim("'''") };
+            return toml.TomlValue{ .string = try self.parse_string_value("'''") };
         } else if (self.starts_with("\"")) {
-            return toml.TomlValue{ .string = try self.parse_string_delim("\"") };
+            return toml.TomlValue{ .string = try self.parse_string_value("\"") };
         } else if (self.starts_with("[")) {
             return toml.TomlValue{ .array = try self.parse_array() };
         } else if (self.starts_with("{")) {
@@ -169,40 +170,46 @@ pub const Parser = struct {
         // return error.NotImplemented;
     }
 
-    fn parse_string_delim(self: *Parser, delimiter: []const u8) ![]const u8 {
-        const str = try self.parse_string_value(delimiter);
-        const str_a = try self.alloc.alloc(u8, str.len);
-        @memcpy(str_a, str);
-        return str_a;
-    }
-
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
+        var output = std.ArrayList(u8).init(self.alloc);
+        errdefer output.deinit();
         for (0..delimiter.len) |_| self.advance();
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
-        const start = self.index;
+        if (is_multiline and self.current() == '\n') self.advance();
         var escaped = false;
         while (self.current()) |c| {
             if (escaped) {
                 escaped = false;
             } else {
                 switch (c) {
-                    '\\' => {
+                    '\\' => if (delimiter[0] == '\"') {
                         escaped = true;
+                        if (is_multiline) {
+                            escaped = false;
+                            self.skip_while_char();
+                            continue;
+                        }
                     },
                     '\'', '\"' => {
                         if (!escaped and self.starts_with(delimiter)) {
-                            const str_value = self.content[start..self.index];
                             for (0..delimiter.len) |_| self.advance();
-                            return str_value;
+                            return output.toOwnedSlice();
                         }
                     },
                     '\n', '\r' => {
-                        if (!is_multiline) return ParseError.InvalidValue;
+                        if (is_multiline) {
+                            try output.appendSlice(if (c == '\n') "\\n" else "\\r");
+                            self.advance();
+                            continue;
+                        } else {
+                            return ParseError.InvalidChar;
+                        }
                     },
                     else => {},
                 }
             }
+            try output.append(c);
             self.advance();
         }
         return ParseError.ErrorEOF;
@@ -308,8 +315,20 @@ pub const Parser = struct {
 
     fn skip_line(self: *Parser) void {
         while (self.current()) |c| {
+            if (c == '\n') {
+                self.advance();
+                break;
+            }
             self.advance();
-            if (c == '\n') break;
+        }
+    }
+
+    fn skip_while_char(self: *Parser) void {
+        self.skip_whitespace();
+        self.skip_line();
+        self.skip_whitespace();
+        if (self.current() == '\n') {
+            self.skip_while_char();
         }
     }
 

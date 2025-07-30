@@ -10,6 +10,7 @@ pub const ParseError = error{
     InvalidKeyValuePair,
     InvalidTableHeader,
     InvalidChar,
+    InvalidEscapeValue,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
     ErrorEOF,
@@ -177,42 +178,47 @@ pub const Parser = struct {
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
         if (is_multiline and self.current() == '\n') self.advance();
-        var escaped = false;
         while (self.current()) |c| {
-            if (escaped) {
-                escaped = false;
-            } else {
-                switch (c) {
-                    '\\' => if (delimiter[0] == '\"') {
-                        escaped = true;
-                        if (is_multiline) {
-                            escaped = false;
-                            self.skip_while_char();
-                            continue;
-                        }
-                    },
-                    '\'', '\"' => {
-                        if (!escaped and self.starts_with(delimiter)) {
-                            for (0..delimiter.len) |_| self.advance();
-                            return output.toOwnedSlice();
-                        }
-                    },
-                    '\n', '\r' => {
-                        if (is_multiline) {
-                            try output.appendSlice(if (c == '\n') "\\n" else "\\r");
-                            self.advance();
-                            continue;
-                        } else {
-                            return ParseError.InvalidChar;
-                        }
-                    },
-                    else => {},
-                }
+            switch (c) {
+                '\'', '\"' => {
+                    if (self.starts_with(delimiter)) {
+                        for (0..delimiter.len) |_| self.advance();
+                        return output.toOwnedSlice();
+                    }
+                },
+                '\n', '\r' => if (!is_multiline) return ParseError.InvalidChar,
+                '\\' => if (delimiter[0] == '\"') {
+                    try self.parse_escaped(is_multiline, &output);
+                    continue;
+                },
+                else => {},
             }
             try output.append(c);
             self.advance();
         }
         return ParseError.ErrorEOF;
+    }
+
+    fn parse_escaped(self: *Parser, multiline: bool, output: *std.ArrayList(u8)) !void {
+        const c = self.next() orelse return ParseError.ErrorEOF;
+        _ = self.next() orelse return ParseError.ErrorEOF;
+        switch (c) {
+            'b' => try output.append(0x08),
+            'f' => try output.append(0x0c),
+            't' => try output.append('\t'),
+            'n' => try output.append('\n'),
+            'r' => try output.append('\r'),
+            '\"' => try output.append('\"'),
+            '\\' => try output.append('\\'),
+            '\r', '\n' => {
+                if (multiline) {
+                    self.skip_while_char();
+                } else {
+                    return ParseError.InvalidChar;
+                }
+            },
+            else => return ParseError.InvalidEscapeValue,
+        }
     }
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
@@ -325,9 +331,8 @@ pub const Parser = struct {
 
     fn skip_while_char(self: *Parser) void {
         self.skip_whitespace();
-        self.skip_line();
-        self.skip_whitespace();
         if (self.current() == '\n') {
+            self.skip_line();
             self.skip_while_char();
         }
     }

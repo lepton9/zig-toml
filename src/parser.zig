@@ -327,11 +327,6 @@ pub const Parser = struct {
         return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
     }
 
-    fn peek_n(self: *Parser, n: usize) ?[]const u8 {
-        if (self.index + 1 + n > self.content.len) return null;
-        return self.content[self.index + 1 .. self.index + 1 + n];
-    }
-
     fn skip_whitespace(self: *Parser) void {
         while (self.current()) |c| {
             if (c == ' ' or c == '\t') {
@@ -374,11 +369,27 @@ pub const Parser = struct {
         self.skip_whitespace();
     }
 
-    pub fn next(self: *Parser) ?u8 {
-        if (self.content.len == 0) return null;
+    fn next(self: *Parser) ?u8 {
+        if (self.index + 1 >= self.content.len) return null;
         self.index += 1;
-        if (self.index == self.content.len) return null;
         return self.content[self.index];
+    }
+
+    fn try_next(self: *Parser) !u8 {
+        return self.next() orelse ParseError.ErrorEOF;
+    }
+
+    fn peek(self: *Parser) ?u8 {
+        return if (self.index < self.content.len - 1) self.content[self.index + 1] else null;
+    }
+
+    fn try_peek(self: *Parser) !u8 {
+        return self.peek() orelse ParseError.ErrorEOF;
+    }
+
+    fn peek_n(self: *Parser, n: usize) ?[]const u8 {
+        if (self.index + 1 + n > self.content.len) return null;
+        return self.content[self.index + 1 .. self.index + 1 + n];
     }
 };
 

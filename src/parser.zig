@@ -166,7 +166,7 @@ pub const Parser = struct {
 
     fn end_of_string(self: *Parser, delimiter: []const u8) bool {
         return self.starts_with(delimiter) and
-            !std.mem.eql(u8, delimiter, self.peek(delimiter.len) catch return false);
+            !std.mem.eql(u8, delimiter, self.peek_n(delimiter.len) orelse return false);
     }
 
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
@@ -327,8 +327,8 @@ pub const Parser = struct {
         return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
     }
 
-    fn peek(self: *Parser, n: usize) ![]const u8 {
-        if (self.index + 1 + n > self.content.len) return ParseError.ErrorEOF;
+    fn peek_n(self: *Parser, n: usize) ?[]const u8 {
+        if (self.index + 1 + n > self.content.len) return null;
         return self.content[self.index + 1 .. self.index + 1 + n];
     }
 

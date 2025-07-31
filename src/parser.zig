@@ -85,7 +85,7 @@ pub const Parser = struct {
         self.advance();
         const start = self.index;
         if (!self.advance_until_any("]")) return ParseError.InvalidTableHeader;
-        const header = self.content[start..self.index];
+        const header = std.mem.trim(u8, self.content[start..self.index], " \t");
         self.advance();
         return header;
     }
@@ -111,10 +111,8 @@ pub const Parser = struct {
                 break :blk &root;
             }
         };
-        const last_key = try allocator.dupe(
-            u8,
-            trim_key(keys[if (last_dot) |i| i + 1 else 0..]),
-        );
+        const value_key = try interpret_key(keys[if (last_dot) |i| i + 1 else 0..]);
+        const last_key = try allocator.dupe(u8, value_key);
         try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
         return root;
     }
@@ -129,8 +127,7 @@ pub const Parser = struct {
                 errdefer value.deinit(self.alloc);
                 const first_dot_ind = indexof_qa(key, '.');
                 if (first_dot_ind) |i| {
-                    const root_key = trim_key(key[0..i]);
-                    if (root_key.len == 0) return ParseError.InvalidKey;
+                    const root_key = try interpret_key(key[0..i]);
                     const root_key_a = try self.alloc.dupe(u8, root_key);
                     errdefer self.alloc.free(root_key_a);
                     const table = try build_nested_table(self.alloc, key[i + 1 ..], value);
@@ -139,8 +136,7 @@ pub const Parser = struct {
                         .value = toml.TomlValue{ .table = table },
                     };
                 } else {
-                    const k = trim_key(key);
-                    if (k.len == 0) return ParseError.InvalidKey;
+                    const k = try interpret_key(key);
                     const key_a = try self.alloc.dupe(u8, k);
                     return KeyValue{ .key = key_a, .value = value };
                 }
@@ -395,10 +391,7 @@ fn get_or_create_table(
     const parts = try split_quote_aware(keys, '.', allocator);
     defer allocator.free(parts);
     for (parts) |part| {
-        const key = trim_key(part);
-        if (key.len == 0) {
-            return ParseError.InvalidKey;
-        }
+        const key = try interpret_key(part);
         const entry = try current.getOrPut(key);
         if (!entry.found_existing) {
             const sub_table = toml.TomlValue.init_table(allocator);
@@ -424,10 +417,8 @@ fn create_table(
     const parts = try split_quote_aware(keys, '.', allocator);
     defer allocator.free(parts);
     for (parts) |part| {
-        const key = trim_key(part);
-        if (key.len == 0) {
+        const key = interpret_key(part) catch
             return ParseError.InvalidTableHeader;
-        }
         const entry = current.getEntry(key);
         if (entry) |e| {
             if (e.value_ptr.* != .table) return ParseError.InvalidTableHeader;
@@ -482,20 +473,22 @@ fn contains(str: []const u8, c: u8) bool {
     return false;
 }
 
-fn is_quoted(s: []const u8) bool {
-    return (s.len >= 2 and (s[0] == '"' and s[s.len - 1] == '"' or s[0] == '\'' and s[s.len - 1] == '\''));
-}
-
-fn trim_key(key: []const u8) []const u8 {
-    return strip_quotes(std.mem.trim(u8, key, " \t"));
-}
-
-fn strip_quotes(s: []const u8) []const u8 {
-    if (s.len > 2 and is_quoted(s)) {
-        const str = s[1 .. s.len - 1];
-        if (std.mem.trim(u8, str, " \t").len == str.len) return str;
+fn interpret_key(str: []const u8) ![]const u8 {
+    var key = std.mem.trim(u8, str, " \t");
+    if (is_quoted(key)) {
+        const unquoted = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
+        const can_remove = unquoted.len > 0 and all(unquoted, valid_key_char);
+        return if (can_remove) unquoted else key;
+    } else {
+        if (key.len > 0 and all(key, valid_key_char)) return key;
+        return ParseError.InvalidKey;
     }
-    return s;
+}
+
+fn is_quoted(s: []const u8) bool {
+    return (s.len >= 2 and
+        ((s[0] == '"' and s[s.len - 1] == '"') or
+            (s[0] == '\'' and s[s.len - 1] == '\'')));
 }
 
 fn is_quote(char: u8) bool {
@@ -557,7 +550,7 @@ fn valid_key_char(c: u8) bool {
     return std.ascii.isAlphanumeric(c) or c == '-' or c == '_';
 }
 
-// TODO:
-fn valid_key(_: []const u8) bool {
-    return false;
+fn all(str: []const u8, func: fn (u8) bool) bool {
+    for (str) |c| if (!func(c)) return false;
+    return true;
 }

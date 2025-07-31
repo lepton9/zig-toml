@@ -77,7 +77,9 @@ pub const Parser = struct {
                     try self.parse_array_of_tables(root, null, array_key);
                 } else {
                     const header = try self.parse_table_header();
-                    const table = try create_table(root, header, self.alloc);
+                    const parts = try split_quote_aware(header, '.', self.alloc);
+                    defer self.alloc.free(parts);
+                    const table = try create_table(root, parts, self.alloc);
                     self.nested = true;
                     try self.parse_table(table);
                 }
@@ -100,26 +102,23 @@ pub const Parser = struct {
 
     fn build_nested_table(
         allocator: std.mem.Allocator,
-        dotted_key: []const u8,
+        key_parts: []const []const u8,
         value: toml.TomlValue,
     ) !toml.TomlTable {
-        const keys = std.mem.trim(u8, dotted_key, " \t");
-        if (keys.len == 0) return ParseError.InvalidKey;
+        if (key_parts.len == 0) return ParseError.InvalidKey;
         var root = toml.TomlTable.init(allocator);
-        const last_dot = last_indexof_qa(keys, '.');
         const inner_table = blk: {
-            if (last_dot) |ind| {
-                if (ind == keys.len - 1) return ParseError.InvalidKey;
+            if (key_parts.len > 1) {
                 break :blk try get_or_create_table(
                     &root,
-                    keys[0..ind],
+                    key_parts[0 .. key_parts.len - 1],
                     allocator,
                 );
             } else {
                 break :blk &root;
             }
         };
-        const value_key = try interpret_key(keys[if (last_dot) |i| i + 1 else 0..]);
+        const value_key = try interpret_key(key_parts[key_parts.len - 1]);
         const last_key = try allocator.dupe(u8, value_key);
         try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
         return root;
@@ -133,18 +132,19 @@ pub const Parser = struct {
                 self.advance();
                 var value = try self.parse_value();
                 errdefer value.deinit(self.alloc);
-                const first_dot_ind = indexof_qa(key, '.');
-                if (first_dot_ind) |i| {
-                    const root_key = try interpret_key(key[0..i]);
+                const parts = try split_quote_aware(key, '.', self.alloc);
+                defer self.alloc.free(parts);
+                if (parts.len > 1) {
+                    const root_key = try interpret_key(parts[0]);
                     const root_key_a = try self.alloc.dupe(u8, root_key);
                     errdefer self.alloc.free(root_key_a);
-                    const table = try build_nested_table(self.alloc, key[i + 1 ..], value);
+                    const table = try build_nested_table(self.alloc, parts[1..], value);
                     return KeyValue{
                         .key = root_key_a,
                         .value = toml.TomlValue{ .table = table },
                     };
                 } else {
-                    const k = try interpret_key(key);
+                    const k = try interpret_key(parts[0]);
                     const key_a = try self.alloc.dupe(u8, k);
                     return KeyValue{ .key = key_a, .value = value };
                 }
@@ -439,46 +439,31 @@ pub const Parser = struct {
 
 fn get_or_create_array(
     root: *toml.TomlTable,
-    parts: []const []const u8,
+    key_parts: []const []const u8,
     allocator: std.mem.Allocator,
 ) !*std.ArrayList(toml.TomlValue) {
-    var current = root;
-    for (parts, 0..) |part, i| {
-        const key = try interpret_key(part);
-        const entry = try current.getOrPut(key);
-        if (!entry.found_existing) {
-            if (i == parts.len - 1) {
-                const array = std.ArrayList(toml.TomlValue).init(allocator);
-                entry.value_ptr.* = toml.TomlValue{ .array = array };
-                entry.key_ptr.* = try allocator.dupe(u8, key);
-                return &entry.value_ptr.array;
-            } else {
-                const sub_table = toml.TomlValue.init_table(allocator);
-                entry.value_ptr.* = sub_table;
-                entry.key_ptr.* = try allocator.dupe(u8, key);
-                current = &entry.value_ptr.table;
-            }
-        } else if (i == parts.len - 1) {
-            if (entry.value_ptr.* != .array) return ParseError.InvalidTableArrayHeader;
-            return &entry.value_ptr.*.array;
-        } else if (entry.value_ptr.* != .table) {
-            return ParseError.InvalidTableNesting;
-        } else {
-            current = &entry.value_ptr.table;
-        }
+    var table = try get_or_create_table(root, key_parts[0 .. key_parts.len - 1], allocator);
+    const key = try interpret_key(key_parts[key_parts.len - 1]);
+    const entry = try table.getOrPut(key);
+    if (!entry.found_existing) {
+        const array = std.ArrayList(toml.TomlValue).init(allocator);
+        entry.value_ptr.* = toml.TomlValue{ .array = array };
+        entry.key_ptr.* = try allocator.dupe(u8, key);
+        return &entry.value_ptr.array;
+    } else {
+        if (entry.value_ptr.* != .array) return ParseError.InvalidTableArrayHeader;
+        return &entry.value_ptr.*.array;
     }
     return ParseError.InvalidTableNesting;
 }
 
 fn get_or_create_table(
     root: *toml.TomlTable,
-    keys: []const u8,
+    key_parts: []const []const u8,
     allocator: std.mem.Allocator,
 ) !*toml.TomlTable {
     var current = root;
-    const parts = try split_quote_aware(keys, '.', allocator);
-    defer allocator.free(parts);
-    for (parts) |part| {
+    for (key_parts) |part| {
         const key = try interpret_key(part);
         const entry = try current.getOrPut(key);
         if (!entry.found_existing) {
@@ -497,14 +482,12 @@ fn get_or_create_table(
 
 fn create_table(
     root: *toml.TomlTable,
-    keys: []const u8,
+    key_parts: []const []const u8,
     allocator: std.mem.Allocator,
 ) !*toml.TomlTable {
     var current = root;
     var created = false;
-    const parts = try split_quote_aware(keys, '.', allocator);
-    defer allocator.free(parts);
-    for (parts) |part| {
+    for (key_parts) |part| {
         const key = interpret_key(part) catch
             return ParseError.InvalidTableHeader;
         const entry = current.getEntry(key);

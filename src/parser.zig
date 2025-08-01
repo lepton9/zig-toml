@@ -28,11 +28,18 @@ const KeyValue = struct {
     value: toml.TomlValue,
 };
 
+const ErrorContext = struct {
+    err: anyerror,
+    index: usize,
+    line_number: usize,
+};
+
 pub const Parser = struct {
     alloc: std.mem.Allocator,
     content: []const u8 = undefined,
     index: usize = 0,
     nested: bool = false,
+    error_ctx: ?ErrorContext = null,
 
     pub fn init(allocator: std.mem.Allocator) !*Parser {
         const parser = try allocator.create(Parser);
@@ -45,6 +52,22 @@ pub const Parser = struct {
         self.alloc.destroy(self);
     }
 
+    fn make_error_context(self: *Parser, err: anyerror) void {
+        self.error_ctx = ErrorContext{
+            .err = err,
+            .index = self.index,
+            .line_number = self.cur_line_number(),
+        };
+    }
+
+    pub fn get_error_context(self: *Parser) ?ErrorContext {
+        return self.error_ctx;
+    }
+
+    fn cur_line_number(self: *Parser) usize {
+        return std.mem.count(u8, self.content[0..self.index], "\n") + 1;
+    }
+
     pub fn parse_file(self: *Parser, file_path: []const u8) !*toml.Toml {
         const file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
@@ -55,8 +78,12 @@ pub const Parser = struct {
     }
 
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
+        self.error_ctx = null;
         self.content = content;
-        return try self.parse_root();
+        return self.parse_root() catch |err| {
+            self.make_error_context(err);
+            return err;
+        };
     }
 
     fn parse_root(self: *Parser) !*toml.Toml {

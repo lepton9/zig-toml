@@ -94,7 +94,7 @@ pub const Parser = struct {
     }
 
     fn parse_table(self: *Parser, root: *toml.TomlTable) !void {
-        self.skip_comments();
+        self.skip_while_char();
         while (self.current()) |c| {
             if (c == '[') {
                 if (self.nested) {
@@ -119,7 +119,7 @@ pub const Parser = struct {
                 const kv = try self.parse_key_value();
                 try add_key_value(root, kv, self.alloc);
             }
-            self.skip_comments();
+            self.skip_while_char();
         }
     }
 
@@ -182,7 +182,7 @@ pub const Parser = struct {
                 }
             }
             self.advance();
-            self.skip_comments();
+            self.skip_comments_ws();
         }
         return ParseError.ErrorEOF;
     }
@@ -277,7 +277,7 @@ pub const Parser = struct {
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
         var array = std.ArrayList(toml.TomlValue).init(self.alloc);
         self.advance();
-        self.skip_whitespace();
+        self.skip_while_char();
         while (self.current()) |c| {
             if (c == ']') {
                 self.advance();
@@ -434,14 +434,14 @@ pub const Parser = struct {
     }
 
     fn skip_while_char(self: *Parser) void {
-        self.skip_whitespace();
-        if (self.current() == '\n') {
-            self.skip_line();
+        self.skip_comments_ws();
+        if (self.current() == '\n' or self.current() == '#') {
+            self.skip_comments_ws();
             self.skip_while_char();
         }
     }
 
-    fn skip_comments(self: *Parser) void {
+    fn skip_comments_ws(self: *Parser) void {
         self.skip_whitespace();
         while (self.current()) |c| {
             if (c == '#') {

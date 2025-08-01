@@ -289,17 +289,11 @@ pub const Parser = struct {
             if (std.mem.eql(u8, key_parts[0], parts[0])) {
                 if (parts.len == 1) return ParseError.KeyValueTypeOverride;
                 for (0..array_key.len + 1) |_| self.advance();
-                const tab = blk: {
-                    if (key_parts.len > 1 and std.mem.eql(u8, key_parts[1], parts[1])) {
-                        if (key_parts.len == parts.len) return ParseError.ExpectedArray;
-                        break :blk try get_or_create_table(&table_toml.table, parts[1..], self.alloc);
-                    } else {
-                        const ar = try get_or_create_array(root, key_parts[0..1], self.alloc);
-                        if (ar.items.len == 0) return ParseError.ExpectedTable;
-                        const last = &ar.items[ar.items.len - 1].table;
-                        break :blk try get_or_create_table(last, parts[1..], self.alloc);
-                    }
-                };
+                var nested_n: u8 = 0;
+                const last_array = try get_last_array(root, parts[0 .. parts.len - 1], &nested_n);
+                if (last_array.items.len == 0) return ParseError.ExpectedTable;
+                const last = &last_array.items[last_array.items.len - 1].table;
+                const tab = try get_or_create_table(last, parts[nested_n..], self.alloc);
                 errdefer {
                     var it = tab.iterator();
                     while (it.next()) |e| {
@@ -472,6 +466,31 @@ pub const Parser = struct {
         return null;
     }
 };
+
+fn get_last_array(
+    root: *toml.TomlTable,
+    key_parts: []const []const u8,
+    nested_n: *u8,
+) anyerror!*std.ArrayList(toml.TomlValue) {
+    nested_n.* = 0;
+    var table = root;
+    var last_array: ?*std.ArrayList(toml.TomlValue) = null;
+    for (key_parts[0..key_parts.len]) |part| {
+        const key = try interpret_key(part);
+        if (table.getEntry(key)) |entry| {
+            if (entry.value_ptr.* == .table) {
+                table = &entry.value_ptr.table;
+                nested_n.* += 1;
+            } else if (entry.value_ptr.* == .array) {
+                last_array = &entry.value_ptr.array;
+                if (last_array.?.items.len == 0) return ParseError.ExpectedTable;
+                table = &last_array.?.items[last_array.?.items.len - 1].table;
+                nested_n.* += 1;
+            } else break;
+        } else break;
+    }
+    return last_array orelse ParseError.ExpectedArray;
+}
 
 fn get_or_create_array(
     root: *toml.TomlTable,

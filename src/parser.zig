@@ -19,6 +19,7 @@ pub const ParseError = error{
     ErrorEOF,
     ExpectedArray,
     ExpectedTable,
+    ExpectedArrayOfTables,
     NotImplemented,
 };
 
@@ -504,6 +505,10 @@ fn get_or_create_array(
     const final_key = key_parts[key_parts.len - 1];
     if (table.getEntry(final_key)) |entry| {
         if (entry.value_ptr.* != .array) return ParseError.ExpectedArray;
+        if (entry.value_ptr.array.items.len == 0) return ParseError.ExpectedArrayOfTables;
+        for (entry.value_ptr.array.items) |elem| {
+            if (elem != .table) return ParseError.ExpectedArrayOfTables;
+        }
         return &entry.value_ptr.array;
     } else {
         const array = std.ArrayList(toml.TomlValue).init(allocator);

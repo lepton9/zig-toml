@@ -220,7 +220,7 @@ pub const Parser = struct {
         for (0..delimiter.len) |_| self.advance();
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
-        if (is_multiline and self.current() == '\n') self.advance();
+        if (is_multiline and self.current() == '\n') self.skip_while_char();
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {

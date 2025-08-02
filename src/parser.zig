@@ -20,7 +20,6 @@ pub const ParseError = error{
     ExpectedArray,
     ExpectedTable,
     ExpectedArrayOfTables,
-    NotImplemented,
 };
 
 const KeyValue = struct {
@@ -48,7 +47,6 @@ pub const Parser = struct {
     }
 
     pub fn deinit(self: *Parser) void {
-        self.alloc.free(self.content);
         self.alloc.destroy(self);
     }
 
@@ -74,6 +72,7 @@ pub const Parser = struct {
         const file_size = try file.getEndPos();
         const buffer = try self.alloc.alloc(u8, file_size);
         _ = try file.readAll(buffer);
+        defer self.alloc.free(buffer);
         return try self.parse_string(buffer);
     }
 
@@ -201,12 +200,16 @@ pub const Parser = struct {
             return toml.TomlValue{ .table = try self.parse_inline_table() };
         }
         return try self.parse_scalar();
-        // return error.NotImplemented;
     }
 
     fn end_of_string(self: *Parser, delimiter: []const u8) bool {
-        return self.starts_with(delimiter) and
-            !std.mem.eql(u8, delimiter, self.peek_n(delimiter.len) orelse return false);
+        return self.starts_with(delimiter) and !blk: {
+            break :blk std.mem.eql(
+                u8,
+                delimiter,
+                self.peek_n(delimiter.len) orelse break :blk false,
+            );
+        };
     }
 
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
@@ -372,7 +375,7 @@ pub const Parser = struct {
         } else if (try types.interpret_time(str)) |x| {
             return toml.TomlValue{ .time = x };
         }
-        return ParseError.NotImplemented;
+        return ParseError.InvalidValue;
     }
 
     fn current(self: *const Parser) ?u8 {

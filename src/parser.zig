@@ -194,6 +194,8 @@ pub const Parser = struct {
             return toml.TomlValue{ .string = try self.parse_string_value("'''") };
         } else if (self.starts_with("\"")) {
             return toml.TomlValue{ .string = try self.parse_string_value("\"") };
+        } else if (self.starts_with("'")) {
+            return toml.TomlValue{ .string = try self.parse_string_value("'") };
         } else if (self.starts_with("[")) {
             return toml.TomlValue{ .array = try self.parse_array() };
         } else if (self.starts_with("{")) {

@@ -64,22 +64,34 @@ pub const TomlValue = union(enum) {
             .array => self.array,
             .table => self.table,
         };
+
+    pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+        var json = std.ArrayList(u8).init(allocator);
+        errdefer json.deinit();
+        var indent: usize = 0;
+        try self.jsonify(&json, &indent);
+        return json.toOwnedSlice();
     }
 
-    pub fn print(self: *const TomlValue) void {
+    fn jsonify(self: *const TomlValue, json: *std.ArrayList(u8), indent: *usize) !void {
+        var buffer: [256]u8 = undefined;
         switch (self.*) {
-            .string => |v| std.debug.print("\"{s}\"", .{v}),
-            .int => |v| std.debug.print("{}", .{v}),
-            .float => |v| std.debug.print("{}", .{v}),
-            .bool => |v| std.debug.print("{}", .{v}),
-            .date => |v| std.debug.print("{:0>4}-{:0>2}-{:0>2}", .{ v.year, v.month, v.day }),
-            .time => |v| std.debug.print("{:0>2}:{:0>2}:{:0>2}.{}", .{
+            .string => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "\"{s}\"", .{v})),
+            .int => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{v})),
+            .float => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{v})),
+            .bool => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{v})),
+            .date => |v| try json.appendSlice(try std.fmt.bufPrint(
+                &buffer,
+                "{:0>4}-{:0>2}-{:0>2}",
+                .{ v.year, v.month, v.day },
+            )),
+            .time => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "{:0>2}:{:0>2}:{:0>2}.{}", .{
                 v.hour,
                 v.minute,
                 v.second,
                 v.nanosecond,
-            }),
-            .datetime => |v| std.debug.print("{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}", .{
+            })),
+            .datetime => |v| try json.appendSlice(try std.fmt.bufPrint(&buffer, "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}", .{
                 v.date.year,
                 v.date.month,
                 v.date.day,
@@ -87,24 +99,38 @@ pub const TomlValue = union(enum) {
                 v.time.minute,
                 v.time.second,
                 v.time.nanosecond,
-            }),
+            })),
             .array => |ar| {
-                std.debug.print("[", .{});
-                for (ar.items) |e| {
-                    e.print();
-                    std.debug.print(",", .{});
+                try json.append('[');
+                for (ar.items, 0..) |e, i| {
+                    try e.jsonify(json, indent);
+                    if (i < ar.items.len - 1) {
+                        try json.appendSlice(", ");
+                    }
                 }
-                std.debug.print("]", .{});
+                try json.append(']');
             },
             .table => |tab| {
-                std.debug.print("{{", .{});
+                try json.appendSlice("{\n");
                 var it = tab.iterator();
+                const n = tab.count();
+                var i: u32 = 0;
                 while (it.next()) |e| {
-                    std.debug.print("{s}:", .{e.key_ptr.*});
-                    e.value_ptr.print();
-                    std.debug.print(",", .{});
+                    indent.* += 2;
+                    for (0..indent.*) |_| try json.append(' ');
+                    try json.appendSlice(
+                        try std.fmt.bufPrint(&buffer, "\"{s}\": ", .{e.key_ptr.*}),
+                    );
+                    try e.value_ptr.jsonify(json, indent);
+                    indent.* -= 2;
+                    if (i < n - 1) {
+                        i += 1;
+                        try json.append(',');
+                    }
+                    try json.append('\n');
                 }
-                std.debug.print("}}", .{});
+                for (0..indent.*) |_| try json.append(' ');
+                try json.append('}');
             },
         }
     }

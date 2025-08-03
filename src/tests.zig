@@ -1,5 +1,6 @@
 const toml = @import("toml.zig");
 const parser = @import("parser.zig");
+const types = @import("types.zig");
 const std = @import("std");
 
 test "toml" {
@@ -172,4 +173,55 @@ test "boolean" {
     const t = toml_data.get_table();
     try std.testing.expect(t.get("bool1").?.bool == true);
     try std.testing.expect(t.get("bool2").?.bool == false);
+}
+
+test "datetime" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ odt1 = 1979-05-27T07:32:00Z
+        \\ odt2 = 1979-05-27T00:32:00-07:00
+        \\ odt3 = 1979-05-27T00:32:00.999999-07:00
+        \\ odt4 = 1979-05-27 07:32:00Z
+        \\ ldt1 = 1979-05-27T07:32:00
+        \\ ldt2 = 1979-05-27T00:32:00.999999
+        \\ ld1 = 1979-05-27
+        \\ lt1 = 07:32:00
+        \\ lt2 = 00:32:00.999999
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(std.meta.eql(t.get("odt1").?.datetime, types.DateTime{
+        .date = .{
+            .day = 27,
+            .month = 5,
+            .year = 1979,
+        },
+        .time = .{
+            .hour = 7,
+            .minute = 32,
+            .second = 0,
+        },
+        .offset_minutes = null,
+    }));
+    try std.testing.expect(t.get("odt2").?.datetime.offset_minutes == -7 * 60);
+    try std.testing.expect(t.get("odt3").?.datetime.time.nanosecond == 999999000);
+    try std.testing.expect(
+        std.meta.eql(t.get("odt1").?.datetime, t.get("odt4").?.datetime),
+    );
+    try std.testing.expect(
+        std.meta.eql(t.get("odt4").?.datetime, t.get("ldt1").?.datetime),
+    );
+    try std.testing.expect(t.get("ldt2").?.datetime.time.nanosecond == 999999000);
+    try std.testing.expect(std.meta.eql(t.get("ld1").?.date, types.Date{
+        .day = 27,
+        .month = 5,
+        .year = 1979,
+    }));
+    try std.testing.expect(
+        std.meta.eql(t.get("lt1").?.time, t.get("odt1").?.datetime.time),
+    );
+    try std.testing.expect(
+        std.meta.eql(t.get("lt2").?.time, t.get("ldt2").?.datetime.time),
+    );
 }

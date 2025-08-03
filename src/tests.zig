@@ -46,6 +46,18 @@ test "keys" {
         \\ 3.14159 = "pi"
     );
     defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(std.mem.eql(u8, t.get("\"127.0.0.1\"").?.string, "value"));
+    try std.testing.expect(
+        std.mem.eql(u8, t.get("\"\"").?.string, t.get("''").?.string),
+    );
+    try std.testing.expect(t.get("site").?.get("\"google.com\"").?.bool == true);
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("fruit").?.get("name").?.string,
+        t.get("fruit").?.get("flavor").?.string,
+    ));
+    try std.testing.expect(std.mem.eql(u8, t.get("3").?.get("14159").?.string, "pi"));
 }
 
 test "strings" {

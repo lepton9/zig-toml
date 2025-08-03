@@ -357,3 +357,64 @@ test "table" {
         t.get("animal").?.get("type").?.get("name").?.string,
     ));
 }
+
+test "array_of_tables" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ points = [ { x = 1, y = 2, z = 3 },
+        \\            { x = 7, y = 8, z = 9 },
+        \\            { x = 2, y = 4, z = 8 } ]
+        \\ [[products]]
+        \\ name = "Hammer"
+        \\ sku = 738594937
+        \\ [[products]]
+        \\ [[products]]
+        \\ name = "Nail"
+        \\ sku = 284758393
+        \\ color = "gray"
+        \\ [[fruits]]
+        \\ name = "apple"
+        \\ [fruits.physical]
+        \\ color = "red"
+        \\ shape = "round"
+        \\ [[fruits.varieties]]
+        \\ name = "red delicious"
+        \\ [[fruits.varieties]]
+        \\ name = "granny smith"
+        \\ [[fruits]]
+        \\ name = "banana"
+        \\ [[fruits.varieties]]
+        \\ name = "plantain"
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(
+        t.get("products").?.array.items.len == 3,
+    );
+    try std.testing.expect(
+        t.get("products").?.array.items[1].table.count() == 0,
+    );
+    try std.testing.expect(
+        t.get("fruits").?.array.items.len == 2,
+    );
+    try std.testing.expect(
+        t.get("fruits").?.array.items[0].table.get("varieties").?.array.items.len == 2,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("fruits").?.array.items[0].table.get("physical").?.table.get("color").?.string,
+        "red",
+    ));
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("fruits").?.array.items[1].table.get("varieties").?.array.items[0].table.get("name").?.string,
+        "plantain",
+    ));
+    try std.testing.expect(
+        t.get("points").?.array.items.len == 3,
+    );
+    try std.testing.expect(
+        t.get("points").?.array.items[1].table.get("y").?.int == 8,
+    );
+}

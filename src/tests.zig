@@ -237,3 +237,52 @@ test "datetime" {
         std.meta.eql(t.get("lt2").?.time, t.get("ldt2").?.datetime.time),
     );
 }
+
+test "array" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ integers = [ 1, 2, 3 ]
+        \\ colors = [ "red", "yellow", "green" ]
+        \\ nested_arrays_of_ints = [ [ 1, 2 ], [3, 4, 5] ]
+        \\ nested_mixed_array = [ [ 1, 2 ], ["a", "b", "c"] ]
+        \\ string_array = [ "all", 'strings', """are the same""", '''type''' ]
+        \\ numbers = [ 0.1, 0.2, 0.5, 1, 2, 5 ]
+        \\ contributors = [
+        \\   "Foo Bar <foo@example.com>",
+        \\   { name = "Baz Qux", email = "bazqux@example.com", url = "https://example.com/bazqux" }
+        \\ ]
+        \\ integers2 = [
+        \\   1, 2, 3
+        \\ ]
+        \\ integers3 = [
+        \\   1,
+        \\   2, # this is ok
+        \\ ]
+        \\ empty = []
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(t.get("integers").?.array.items.len == 3);
+    try std.testing.expect(
+        t.get("nested_arrays_of_ints").?.array.items[1].array.items[1].int == 4,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("nested_mixed_array").?.array.items[1].array.items[1].string,
+        "b",
+    ));
+    try std.testing.expect(
+        std.mem.eql(u8, t.get("string_array").?.array.items[2].string, "are the same"),
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("contributors").?.array.items[1].get("url").?.string,
+        "https://example.com/bazqux",
+    ));
+    try std.testing.expect(
+        t.get("integers").?.array.items.len == t.get("integers2").?.array.items.len,
+    );
+    try std.testing.expect(t.get("integers3").?.array.items.len == 2);
+    try std.testing.expect(t.get("empty").?.array.items.len == 0);
+}

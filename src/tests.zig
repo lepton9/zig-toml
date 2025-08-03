@@ -124,3 +124,39 @@ test "integer" {
     try std.testing.expect(t.get("bin1").?.int == 0b11010110);
 }
 
+test "float" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ flt1 = +1.0
+        \\ flt2 = 3.1415
+        \\ flt3 = -0.01
+        \\ flt4 = 5e+22
+        \\ flt5 = 1e06
+        \\ flt6 = -2E-2
+        \\ flt7 = 6.626e-34
+        \\ flt8 = 224_617.445_991_228
+        \\ sf1 = inf  # positive infinity
+        \\ sf2 = +inf # positive infinity
+        \\ sf3 = -inf # negative infinity
+        \\ sf4 = nan  # actual sNaN/qNaN encoding is implementation-specific
+        \\ sf5 = +nan # same as `nan`
+        \\ sf6 = -nan # valid, actual encoding is implementation-specific
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(t.get("flt1").?.float == 1.0);
+    try std.testing.expect(t.get("flt2").?.float == 3.1415);
+    try std.testing.expect(t.get("flt3").?.float == -0.01);
+    try std.testing.expect(t.get("flt4").?.float == 5e+22);
+    try std.testing.expect(t.get("flt5").?.float == 1e06);
+    try std.testing.expect(t.get("flt6").?.float == -2E-2);
+    try std.testing.expect(t.get("flt7").?.float == 6.626e-34);
+    try std.testing.expect(t.get("flt8").?.float == 224_617.445_991_228);
+    try std.testing.expect(std.math.isInf(t.get("sf1").?.float));
+    try std.testing.expect(std.math.isInf(t.get("sf2").?.float));
+    try std.testing.expect(std.math.isInf(t.get("sf3").?.float) and t.get("sf3").?.float < 0);
+    try std.testing.expect(std.math.isNan(t.get("sf4").?.float));
+    try std.testing.expect(std.math.isNan(t.get("sf5").?.float));
+    try std.testing.expect(std.math.isNan(t.get("sf6").?.float));
+}

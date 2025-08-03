@@ -46,3 +46,48 @@ test "keys" {
     );
     defer toml_data.deinit();
 }
+
+test "strings" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ str = "I'm a string. \"You can quote me\". Name\tJos\u00E9\nLocation\tSF."
+        \\ str1 = "The quick brown fox jumps over the lazy dog."
+        \\ str2 = """
+        \\ The quick brown \
+        \\ 
+        \\ 
+        \\   fox jumps over \
+        \\     the lazy dog."""
+        \\ str3 = """\
+        \\        The quick brown \
+        \\        fox jumps over \
+        \\        the lazy dog.\
+        \\        """
+        \\ str4 = """Here are two quotation marks: "". Simple enough."""
+        \\ str5 = """Here are three quotation marks: ""\"."""
+        \\ str6 = """Here are fifteen quotation marks: ""\"""\"""\"""\"""\"."""
+        \\ str7 = """"This," she said, "is just a pointless statement.""""
+        \\ winpath  = 'C:\Users\nodejs\templates'
+        \\ winpath2 = '\\ServerX\admin$\system32\'
+        \\ quoted   = 'Tom "Dubs" Preston-Werner'
+        \\ regex    = '<\i\c*\s*>'
+        \\ regex2 = '''I [dw]on't need \d{2} apples'''
+        \\ lines  = '''
+        \\ The first newline is
+        \\ trimmed in raw strings.
+        \\    All other whitespace
+        \\    is preserved.
+        \\ '''
+        \\ quot15 = '''Here are fifteen quotation marks: """""""""""""""'''
+        \\ apos15 = "Here are fifteen apostrophes: '''''''''''''''"
+        \\ str8 = ''''That,' she said, 'is still pointless.''''
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(std.mem.eql(u8, t.get("str1").?.string, t.get("str2").?.string));
+    try std.testing.expect(std.mem.eql(u8, t.get("str2").?.string, t.get("str3").?.string));
+    try std.testing.expect(std.mem.eql(u8, t.get("str6").?.string, "Here are fifteen quotation marks: \"\"\"\"\"\"\"\"\"\"\"\"\"\"\"."));
+    try std.testing.expect(std.mem.eql(u8, t.get("str8").?.string, "'That,' she said, 'is still pointless.'"));
+    try std.testing.expect(std.mem.eql(u8, t.get("regex").?.string, "<\\i\\c*\\s*>"));
+}

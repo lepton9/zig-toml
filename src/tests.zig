@@ -91,3 +91,36 @@ test "strings" {
     try std.testing.expect(std.mem.eql(u8, t.get("str8").?.string, "'That,' she said, 'is still pointless.'"));
     try std.testing.expect(std.mem.eql(u8, t.get("regex").?.string, "<\\i\\c*\\s*>"));
 }
+
+test "integer" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ int1 = +99
+        \\ int2 = 42
+        \\ int3 = 0
+        \\ int4 = -17
+        \\ int5 = 1_000
+        \\ int6 = 5_349_221
+        \\ int7 = 53_49_221
+        \\ int8 = 1_2_3_4_5
+        \\ hex1 = 0xDEADBEEF
+        \\ hex2 = 0xdeadbeef
+        \\ hex3 = 0xdead_beef
+        \\ oct1 = 0o01234567
+        \\ oct2 = 0o755
+        \\ bin1 = 0b11010110
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(t.get("int1").?.int == 99);
+    try std.testing.expect(t.get("int3").?.int == 0);
+    try std.testing.expect(t.get("int4").?.int == -17);
+    try std.testing.expect(t.get("int6").?.int == 5349221);
+    try std.testing.expect(t.get("int8").?.int == 12345);
+    try std.testing.expect(t.get("hex1").?.int == t.get("hex2").?.int);
+    try std.testing.expect(t.get("hex2").?.int == t.get("hex3").?.int);
+    try std.testing.expect(t.get("oct1").?.int == 0o01234567);
+    try std.testing.expect(t.get("bin1").?.int == 0b11010110);
+}
+

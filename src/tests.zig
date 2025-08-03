@@ -286,3 +286,74 @@ test "array" {
     try std.testing.expect(t.get("integers3").?.array.items.len == 2);
     try std.testing.expect(t.get("empty").?.array.items.len == 0);
 }
+
+test "table" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ name_inline = { first = "Tom", last = "Preston-Werner" }
+        \\ point_inline = { x = 1, y = 2 }
+        \\ animal_inline = { type.name = "pug" }
+        \\ fruit.apple.color = "red"
+        \\ fruit.apple.taste.sweet = true
+        \\ [fruit1]
+        \\ apple.color = "red"
+        \\ apple.taste.sweet = true
+        \\ [fruit2.apple.texture]
+        \\ smooth = true
+        \\ [table-1]
+        \\ key1 = "some string"
+        \\ key2 = 123
+        \\ [table-2]
+        \\ key1 = "another string"
+        \\ key2 = 456
+        \\ [dog."tater.man"]
+        \\ type.name = "pug"
+        \\ [a.b.c]
+        \\ [ d.e.f ]          # same as [d.e.f]
+        \\ [ g .  h  . i ]    # same as [g.h.i]
+        \\ [ j . "ʞ" . 'l' ]
+        \\ key1 = 123
+        \\ [x.y.z.w]
+        \\ [x]
+        \\ [name]
+        \\ first = "Tom"
+        \\ last = "Preston-Werner"
+        \\ [point]
+        \\ x = 1
+        \\ y = 2
+        \\ [animal]
+        \\ type.name = "pug"
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("fruit").?.get("apple").?.get("color").?.string,
+        t.get("fruit1").?.get("apple").?.get("color").?.string,
+    ));
+    try std.testing.expect(
+        t.get("fruit2").?.get("apple").?.get("texture").?.get("smooth").?.bool == true,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("dog").?.get("\"tater.man\"").?.get("type").?.get("name").?.string,
+        "pug",
+    ));
+    try std.testing.expect(
+        t.get("j").?.get("\"ʞ\"").?.get("'l'").?.get("key1").?.int == 123,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("name_inline").?.get("first").?.string,
+        t.get("name").?.get("first").?.string,
+    ));
+    try std.testing.expect(
+        t.get("point_inline").?.get("x").?.int == t.get("point").?.get("x").?.int,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("animal_inline").?.get("type").?.get("name").?.string,
+        t.get("animal").?.get("type").?.get("name").?.string,
+    ));
+}

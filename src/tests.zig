@@ -160,3 +160,16 @@ test "float" {
     try std.testing.expect(std.math.isNan(t.get("sf5").?.float));
     try std.testing.expect(std.math.isNan(t.get("sf6").?.float));
 }
+
+test "boolean" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const toml_data = try p.parse_string(
+        \\ bool1 = true
+        \\ bool2 = false
+    );
+    defer toml_data.deinit();
+    const t = toml_data.get_table();
+    try std.testing.expect(t.get("bool1").?.bool == true);
+    try std.testing.expect(t.get("bool2").?.bool == false);
+}

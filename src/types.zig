@@ -1,6 +1,7 @@
 const std = @import("std");
 
 pub const TypeError = error{
+    InvalidKey,
     InvalidYear,
     InvalidMonth,
     InvalidDay,
@@ -29,6 +30,18 @@ pub const DateTime = struct {
     time: Time,
     offset_minutes: ?i16 = 0,
 };
+
+pub fn interpret_key(str: []const u8) ![]const u8 {
+    var key = std.mem.trim(u8, str, " \t");
+    if (is_quoted(key)) {
+        const unquoted = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
+        const can_remove = unquoted.len > 0 and all(unquoted, valid_key_char);
+        return if (can_remove) unquoted else key;
+    } else {
+        if (key.len > 0 and all(key, valid_key_char)) return key;
+        return TypeError.InvalidKey;
+    }
+}
 
 pub fn interpret_int(str: []const u8) ?i64 {
     return std.fmt.parseInt(i64, str, 0) catch return null;
@@ -109,4 +122,23 @@ fn validate_time(time: Time) TypeError!void {
     if (time.hour > 23) return TypeError.InvalidHour;
     if (time.minute > 59) return TypeError.InvalidMinute;
     if (time.second > 59) return TypeError.InvalidSecond;
+}
+
+fn is_quoted(s: []const u8) bool {
+    return (s.len >= 2 and
+        ((s[0] == '"' and s[s.len - 1] == '"') or
+            (s[0] == '\'' and s[s.len - 1] == '\'')));
+}
+
+fn valid_key_char(c: u8) bool {
+    return std.ascii.isAlphanumeric(c) or c == '-' or c == '_';
+}
+
+fn all(str: []const u8, func: fn (u8) bool) bool {
+    for (str) |c| if (!func(c)) return false;
+    return true;
+}
+
+pub fn is_quote(char: u8) bool {
+    return char == '"' or char == '\'';
 }

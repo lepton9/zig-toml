@@ -149,7 +149,7 @@ pub const Parser = struct {
                 break :blk &root;
             }
         };
-        const value_key = try interpret_key(key_parts[key_parts.len - 1]);
+        const value_key = try types.interpret_key(key_parts[key_parts.len - 1]);
         const last_key = try allocator.dupe(u8, value_key);
         try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
         return root;
@@ -166,7 +166,7 @@ pub const Parser = struct {
                 const parts = try split_quote_aware(key, '.', self.alloc);
                 defer self.alloc.free(parts);
                 if (parts.len > 1) {
-                    const root_key = try interpret_key(parts[0]);
+                    const root_key = try types.interpret_key(parts[0]);
                     const root_key_a = try self.alloc.dupe(u8, root_key);
                     errdefer self.alloc.free(root_key_a);
                     const table = try build_nested_table(self.alloc, parts[1..], value);
@@ -175,7 +175,7 @@ pub const Parser = struct {
                         .value = toml.TomlValue{ .table = table },
                     };
                 } else {
-                    const k = try interpret_key(parts[0]);
+                    const k = try types.interpret_key(parts[0]);
                     const key_a = try self.alloc.dupe(u8, k);
                     return KeyValue{ .key = key_a, .value = value };
                 }
@@ -508,7 +508,7 @@ fn get_last_array(
     var table = root;
     var last_array: ?*std.ArrayList(toml.TomlValue) = null;
     for (key_parts[0..key_parts.len]) |part| {
-        const key = try interpret_key(part);
+        const key = try types.interpret_key(part);
         if (table.getEntry(key)) |entry| {
             if (entry.value_ptr.* == .table) {
                 table = &entry.value_ptr.table;
@@ -531,7 +531,7 @@ fn get_or_create_array(
 ) anyerror!*std.ArrayList(toml.TomlValue) {
     var table = root;
     for (key_parts[0 .. key_parts.len - 1]) |part| {
-        const key = try interpret_key(part);
+        const key = try types.interpret_key(part);
         if (table.getEntry(key)) |entry| {
             if (entry.value_ptr.* == .table) {
                 table = &entry.value_ptr.table;
@@ -563,7 +563,7 @@ fn get_or_create_array(
         return &entry.value_ptr.array;
     } else {
         const array = std.ArrayList(toml.TomlValue).init(allocator);
-        const k = try allocator.dupe(u8, try interpret_key(final_key));
+        const k = try allocator.dupe(u8, try types.interpret_key(final_key));
         try add_key_value(
             table,
             .{ .key = k, .value = toml.TomlValue{ .array = array } },
@@ -580,7 +580,7 @@ fn get_or_create_table(
 ) !*toml.TomlTable {
     var current = root;
     for (key_parts) |part| {
-        const key = try interpret_key(part);
+        const key = try types.interpret_key(part);
         const entry = try current.getOrPut(key);
         if (!entry.found_existing) {
             const sub_table = toml.TomlValue.init_table(allocator);
@@ -604,7 +604,7 @@ fn create_table(
     var current = root;
     var created = false;
     for (key_parts) |part| {
-        const key = interpret_key(part) catch
+        const key = types.interpret_key(part) catch
             return ParseError.InvalidTableHeader;
         const entry = current.getEntry(key);
         if (entry) |e| {
@@ -660,28 +660,6 @@ fn contains(str: []const u8, c: u8) bool {
     return false;
 }
 
-fn interpret_key(str: []const u8) ![]const u8 {
-    var key = std.mem.trim(u8, str, " \t");
-    if (is_quoted(key)) {
-        const unquoted = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
-        const can_remove = unquoted.len > 0 and all(unquoted, valid_key_char);
-        return if (can_remove) unquoted else key;
-    } else {
-        if (key.len > 0 and all(key, valid_key_char)) return key;
-        return ParseError.InvalidKey;
-    }
-}
-
-fn is_quoted(s: []const u8) bool {
-    return (s.len >= 2 and
-        ((s[0] == '"' and s[s.len - 1] == '"') or
-            (s[0] == '\'' and s[s.len - 1] == '\'')));
-}
-
-fn is_quote(char: u8) bool {
-    return char == '"' or char == '\'';
-}
-
 fn handle_quote(quote: *?u8, c: u8) void {
     if (quote.* == null) {
         quote.* = c;
@@ -694,7 +672,7 @@ fn last_indexof_qa(str: []const u8, char: u8) ?usize {
     var quote: ?u8 = null;
     for (0..str.len) |i| {
         const c = str[str.len - 1 - i];
-        if (is_quote(c)) {
+        if (types.is_quote(c)) {
             handle_quote(&quote, c);
         } else if (c == char and quote == null) {
             return str.len - 1 - i;
@@ -706,7 +684,7 @@ fn last_indexof_qa(str: []const u8, char: u8) ?usize {
 fn indexof_qa(str: []const u8, char: u8) ?usize {
     var quote: ?u8 = null;
     for (str, 0..) |c, i| {
-        if (is_quote(c)) {
+        if (types.is_quote(c)) {
             handle_quote(&quote, c);
         } else if (c == char and quote == null) {
             return i;
@@ -731,13 +709,4 @@ fn split_quote_aware(
         try parts.append(std.mem.trim(u8, str[start..], " \t"));
     }
     return try parts.toOwnedSlice();
-}
-
-fn valid_key_char(c: u8) bool {
-    return std.ascii.isAlphanumeric(c) or c == '-' or c == '_';
-}
-
-fn all(str: []const u8, func: fn (u8) bool) bool {
-    for (str) |c| if (!func(c)) return false;
-    return true;
 }

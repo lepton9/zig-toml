@@ -40,9 +40,9 @@ pub const TomlValue = union(enum) {
         }
     }
 
-    pub fn get(self: *TomlValue, key: []const u8) ?TomlValue {
+    pub fn get(self: *const TomlValue, key: []const u8) ?TomlValue {
         if (self.* == TomlValue.table) {
-            return self.table.get(key);
+            return self.table.get(types.interpret_key(key) catch return null);
         }
         return null;
     }
@@ -126,6 +126,6 @@ pub const Toml = struct {
     }
 
     pub fn get_table(self: *Toml) TomlTable {
-        return self.table.value();
+        return self.table.table;
     }
 };

@@ -1,5 +1,6 @@
 const std = @import("std");
 const types = @import("types.zig");
+const Json = @import("json.zig").Json;
 
 pub const TomlTable = std.StringHashMap(TomlValue);
 pub const TomlArray = std.ArrayList(TomlValue);
@@ -91,111 +92,10 @@ pub const TomlValue = union(enum) {
         };
 
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
-        var json = std.ArrayList(u8).init(allocator);
+        var json = try Json.init(allocator);
         errdefer json.deinit();
         var indent: usize = 0;
-        try self.jsonify(&json, &indent);
-        return json.toOwnedSlice();
-    }
-
-    fn jsonify(self: *const TomlValue, json: *std.ArrayList(u8), indent: *usize) anyerror!void {
-        switch (self.*) {
-            .string => |v| try string_to_json(v, json),
-            .int => |v| try int_to_json(v, json),
-            .float => |v| try float_to_json(v, json),
-            .bool => |v| try bool_to_json(v, json),
-            .date => |v| try date_to_json(v, json),
-            .time => |v| try time_to_json(v, json),
-            .datetime => |v| try datetime_to_json(v, json),
-            .array => |v| try array_to_json(v, json, indent),
-            .table => |v| try table_to_json(v, json, indent),
-        }
+        try json.jsonify(self, &indent);
+        return json.to_owned();
     }
 };
-
-fn string_to_json(value: []const u8, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "\"{s}\"", .{value}));
-}
-
-fn int_to_json(value: i64, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{value}));
-}
-
-fn float_to_json(value: f64, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{value}));
-}
-
-fn bool_to_json(value: bool, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "{}", .{value}));
-}
-
-fn date_to_json(value: types.Date, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(
-        &buffer,
-        "{:0>4}-{:0>2}-{:0>2}",
-        .{ value.year, value.month, value.day },
-    ));
-}
-
-fn time_to_json(value: types.Time, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "{:0>2}:{:0>2}:{:0>2}.{}", .{
-        value.hour,
-        value.minute,
-        value.second,
-        value.nanosecond,
-    }));
-}
-
-fn datetime_to_json(value: types.DateTime, json: *std.ArrayList(u8)) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice(try std.fmt.bufPrint(&buffer, "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}", .{
-        value.date.year,
-        value.date.month,
-        value.date.day,
-        value.time.hour,
-        value.time.minute,
-        value.time.second,
-        value.time.nanosecond,
-    }));
-}
-
-fn array_to_json(value: TomlArray, json: *std.ArrayList(u8), indent: *usize) !void {
-    try json.append('[');
-    for (value.items, 0..) |e, i| {
-        try e.jsonify(json, indent);
-        if (i < value.items.len - 1) {
-            try json.appendSlice(", ");
-        }
-    }
-    try json.append(']');
-}
-
-fn table_to_json(value: TomlTable, json: *std.ArrayList(u8), indent: *usize) !void {
-    var buffer: [256]u8 = undefined;
-    try json.appendSlice("{\n");
-    var it = value.iterator();
-    const n = value.count();
-    var i: u32 = 0;
-    while (it.next()) |e| {
-        indent.* += 2;
-        for (0..indent.*) |_| try json.append(' ');
-        try json.appendSlice(
-            try std.fmt.bufPrint(&buffer, "\"{s}\": ", .{e.key_ptr.*}),
-        );
-        try e.value_ptr.jsonify(json, indent);
-        indent.* -= 2;
-        if (i < n - 1) {
-            i += 1;
-            try json.append(',');
-        }
-        try json.append('\n');
-    }
-    for (0..indent.*) |_| try json.append(' ');
-    try json.append('}');
-}

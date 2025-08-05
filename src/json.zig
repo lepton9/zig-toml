@@ -91,7 +91,7 @@ pub const Json = struct {
         if (json.type_info) {
             return try json.content.appendSlice(try std.fmt.bufPrint(
                 &json.buffer,
-                "{{\"type\": \"bool\", \"value\": \"{:0>4}-{:0>2}-{:0>2}\"}}",
+                "{{\"type\": \"date\", \"value\": \"{:0>4}-{:0>2}-{:0>2}\"}}",
                 .{ value.year, value.month, value.day },
             ));
         }
@@ -106,7 +106,7 @@ pub const Json = struct {
         if (json.type_info) {
             return try json.content.appendSlice(try std.fmt.bufPrint(
                 &json.buffer,
-                "{{\"type\": \"bool\", \"value\": \"{:0>2}:{:0>2}:{:0>2}.{}\"}}",
+                "{{\"type\": \"time\", \"value\": \"{:0>2}:{:0>2}:{:0>2}.{}\"}}",
                 .{ value.hour, value.minute, value.second, value.nanosecond },
             ));
         }
@@ -121,7 +121,7 @@ pub const Json = struct {
         if (json.type_info) {
             return try json.content.appendSlice(try std.fmt.bufPrint(
                 &json.buffer,
-                "{{\"type\": \"bool\", \"value\": \"{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}\"}}",
+                "{{\"type\": \"datetime\", \"value\": \"{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}\"}}",
                 .{
                     value.date.year,
                     value.date.month,

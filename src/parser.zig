@@ -220,7 +220,8 @@ pub const Parser = struct {
         for (0..delimiter.len) |_| self.advance();
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
-        if (is_multiline and self.current() == '\n') self.skip_while_char();
+        if (is_multiline and (self.current() == '\n' or self.current() == '\\'))
+            self.skip_while_char();
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {
@@ -321,13 +322,19 @@ pub const Parser = struct {
             const parts = try split_quote_aware(array_key[1..], '.', self.alloc);
             defer self.alloc.free(parts);
             if (std.mem.eql(u8, key_parts[0], parts[0])) {
-                if (parts.len == 1) return ParseError.KeyValueTypeOverride;
+                if (parts.len == 1 and key_parts.len == 1) return ParseError.KeyValueTypeOverride;
                 for (0..array_key.len + 1) |_| self.advance();
                 var nested_n: u8 = 0;
-                const last_array = try get_last_array(root, parts[0 .. parts.len - 1], &nested_n);
-                if (last_array.items.len == 0) return ParseError.ExpectedTable;
-                const last = &last_array.items[last_array.items.len - 1].table;
-                const tab = try get_or_create_table(last, parts[nested_n..], self.alloc);
+                const tab = blk: {
+                    if (parts.len == 1) {
+                        break :blk try get_or_create_table(root, parts, self.alloc);
+                    } else {
+                        const last_array = try get_last_array(root, parts[0 .. parts.len - 1], &nested_n);
+                        if (last_array.items.len == 0) return ParseError.ExpectedTable;
+                        const last = &last_array.items[last_array.items.len - 1].table;
+                        break :blk try get_or_create_table(last, parts[nested_n..], self.alloc);
+                    }
+                };
                 errdefer {
                     var it = tab.iterator();
                     while (it.next()) |e| {

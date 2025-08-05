@@ -13,12 +13,12 @@ pub const ParseError = error{
     InvalidChar,
     InvalidEscapeValue,
     InvalidUnicode,
-    InvalidAfterHeader,
     InvalidStringDelimiter,
     KeyValueTypeOverride,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
     RedefinitionOfTable,
+    InlineDefinition,
     TrailingComma,
     ErrorEOF,
     ExpectedArray,
@@ -123,6 +123,14 @@ pub const Parser = struct {
                 }
             } else {
                 const kv = try self.parse_key_value();
+                {
+                    errdefer {
+                        var value = kv.value;
+                        self.alloc.free(kv.key_parts);
+                        value.deinit(self.alloc);
+                    }
+                    try self.expect_skip_line();
+                }
                 try add_key_value(root, kv, self.alloc);
             }
             self.skip_while_char();
@@ -289,6 +297,7 @@ pub const Parser = struct {
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
         var array = std.ArrayList(toml.TomlValue).init(self.alloc);
+        errdefer toml.deinit_array(&array, self.alloc);
         self.advance();
         self.skip_while_char();
         while (self.current()) |c| {
@@ -340,7 +349,6 @@ pub const Parser = struct {
                         break :blk try get_or_create_table(last, parts[nested_n..], self.alloc);
                     }
                 };
-                errdefer toml.deinit_r(table, self.alloc);
                 self.nested = true;
                 try self.parse_table(table);
             }
@@ -349,7 +357,7 @@ pub const Parser = struct {
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
         var table = toml.TomlTable.init(self.alloc);
-        errdefer toml.deinit_r(&table, self.alloc);
+        errdefer toml.deinit_table(&table, self.alloc);
         var comma = false;
         self.advance();
         self.skip_whitespace();
@@ -457,7 +465,7 @@ pub const Parser = struct {
                 self.advance();
                 break;
             } else if (c == '#') return self.skip_line();
-            if (c != ' ') return ParseError.InvalidAfterHeader;
+            if (c != ' ') return ParseError.InlineDefinition;
             self.advance();
         }
     }

@@ -13,6 +13,7 @@ pub const ParseError = error{
     InvalidChar,
     InvalidEscapeValue,
     InvalidUnicode,
+    InvalidAfterHeader,
     InvalidStringDelimiter,
     KeyValueTypeOverride,
     DuplicateKeyValuePair,
@@ -105,13 +106,15 @@ pub const Parser = struct {
                 } else if (try self.try_peek() == '[') {
                     self.advance();
                     const array_key = try self.parse_table_header();
+                    if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
+                    try self.expect_skip_line();
                     const parts = try split_quote_aware(array_key, '.', self.alloc);
                     if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
                     defer self.alloc.free(parts);
-                    if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
                     try self.parse_array_of_tables(root, parts);
                 } else {
                     const header = try self.parse_table_header();
+                    try self.expect_skip_line();
                     const parts = try split_quote_aware(header, '.', self.alloc);
                     defer self.alloc.free(parts);
                     const table = try create_table(root, parts, self.alloc);
@@ -444,6 +447,17 @@ pub const Parser = struct {
                 self.advance();
                 break;
             }
+            self.advance();
+        }
+    }
+
+    fn expect_skip_line(self: *Parser) !void {
+        while (self.current()) |c| {
+            if (c == '\n') {
+                self.advance();
+                break;
+            } else if (c == '#') return self.skip_line();
+            if (c != ' ') return ParseError.InvalidAfterHeader;
             self.advance();
         }
     }

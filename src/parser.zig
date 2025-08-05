@@ -103,6 +103,7 @@ pub const Parser = struct {
                     self.advance();
                     const array_key = try self.parse_table_header();
                     const parts = try split_quote_aware(array_key, '.', self.alloc);
+                    if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
                     defer self.alloc.free(parts);
                     if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
                     try self.parse_array_of_tables(root, parts);
@@ -164,6 +165,7 @@ pub const Parser = struct {
                 var value = try self.parse_value();
                 errdefer value.deinit(self.alloc);
                 const parts = try split_quote_aware(key, '.', self.alloc);
+                if (parts.len == 0) return ParseError.InvalidKey;
                 defer self.alloc.free(parts);
                 if (parts.len > 1) {
                     const root_key = try types.interpret_key(parts[0]);

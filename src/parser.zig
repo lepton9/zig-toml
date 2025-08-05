@@ -13,6 +13,7 @@ pub const ParseError = error{
     InvalidChar,
     InvalidEscapeValue,
     InvalidUnicode,
+    InvalidStringDelimiter,
     KeyValueTypeOverride,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
@@ -216,6 +217,14 @@ pub const Parser = struct {
         };
     }
 
+    fn invalid_string_delim(self: *Parser, delimiter: []const u8) bool {
+        return (std.mem.eql(
+            u8,
+            delimiter,
+            self.look_behind(delimiter.len) orelse return true,
+        ));
+    }
+
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
         var output = std.ArrayList(u8).init(self.alloc);
         errdefer output.deinit();
@@ -227,6 +236,8 @@ pub const Parser = struct {
             switch (c) {
                 '\'', '\"' => {
                     if (self.end_of_string(delimiter)) {
+                        if (output.items.len > 0 and self.invalid_string_delim(delimiter))
+                            return ParseError.InvalidStringDelimiter;
                         for (0..delimiter.len) |_| self.advance();
                         return output.toOwnedSlice();
                     }
@@ -498,6 +509,11 @@ pub const Parser = struct {
             i += 1;
         }
         return null;
+    }
+
+    fn look_behind(self: *Parser, n: usize) ?[]const u8 {
+        if (self.index - n < 0) return null;
+        return self.content[self.index - n .. self.index];
     }
 };
 

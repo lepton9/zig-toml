@@ -146,31 +146,6 @@ pub const Parser = struct {
         return header;
     }
 
-    // TODO: deprecated
-    fn build_nested_table(
-        allocator: std.mem.Allocator,
-        key_parts: []const []const u8,
-        value: toml.TomlValue,
-    ) !toml.TomlTable {
-        if (key_parts.len == 0) return ParseError.InvalidKey;
-        var root = toml.TomlTable.init(allocator);
-        const inner_table = blk: {
-            if (key_parts.len > 1) {
-                break :blk try get_or_create_table(
-                    &root,
-                    key_parts[0 .. key_parts.len - 1],
-                    allocator,
-                );
-            } else {
-                break :blk &root;
-            }
-        };
-        const value_key = try types.interpret_key(key_parts[key_parts.len - 1]);
-        const last_key = try allocator.dupe(u8, value_key);
-        try add_key_value(inner_table, .{ .key = last_key, .value = value }, allocator);
-        return root;
-    }
-
     fn parse_key_value(self: *Parser) !KeyValue {
         const start = self.index;
         while (self.current()) |c| {

@@ -5,6 +5,15 @@ const Json = @import("json.zig").Json;
 pub const TomlTable = std.StringHashMap(TomlValue);
 pub const TomlArray = std.ArrayList(TomlValue);
 
+pub fn deinit_r(table: *TomlTable, allocator: std.mem.Allocator) void {
+    var it = table.iterator();
+    while (it.next()) |e| {
+        e.value_ptr.deinit(allocator);
+        allocator.free(e.key_ptr.*);
+    }
+    table.deinit();
+}
+
 pub const Toml = struct {
     table: TomlValue,
     alloc: std.mem.Allocator,
@@ -26,6 +35,10 @@ pub const Toml = struct {
 
     pub fn to_json(self: *const Toml) ![]const u8 {
         return try self.table.to_json(self.alloc);
+    }
+
+    pub fn to_json_with_types(self: *const Toml) ![]const u8 {
+        return try self.table.to_json_with_types(self.alloc);
     }
 };
 
@@ -54,14 +67,7 @@ pub const TomlValue = union(enum) {
                 }
                 ar.deinit();
             },
-            .table => |*table| {
-                var it = table.iterator();
-                while (it.next()) |e| {
-                    e.value_ptr.deinit(alloc);
-                    alloc.free(e.key_ptr.*);
-                }
-                table.deinit();
-            },
+            .table => |*table| deinit_r(table, alloc),
             else => {},
         }
     }
@@ -92,7 +98,15 @@ pub const TomlValue = union(enum) {
         };
 
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
-        var json = try Json.init(allocator);
+        var json = try Json.init(allocator, false);
+        errdefer json.deinit();
+        var indent: usize = 0;
+        try json.jsonify(self, &indent);
+        return json.to_owned();
+    }
+
+    pub fn to_json_with_types(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+        var json = try Json.init(allocator, true);
         errdefer json.deinit();
         var indent: usize = 0;
         try json.jsonify(self, &indent);

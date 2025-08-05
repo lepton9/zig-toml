@@ -18,6 +18,7 @@ pub const ParseError = error{
     DuplicateKeyValuePair,
     DuplicateTableHeader,
     RedefinitionOfTable,
+    TrailingComma,
     ErrorEOF,
     ExpectedArray,
     ExpectedTable,
@@ -326,7 +327,7 @@ pub const Parser = struct {
                 if (parts.len == 1 and key_parts.len == 1) return ParseError.KeyValueTypeOverride;
                 for (0..array_key.len + 1) |_| self.advance();
                 var nested_n: u8 = 0;
-                const tab = blk: {
+                const table = blk: {
                     if (parts.len == 1) {
                         break :blk try get_or_create_table(root, parts, self.alloc);
                     } else {
@@ -336,26 +337,22 @@ pub const Parser = struct {
                         break :blk try get_or_create_table(last, parts[nested_n..], self.alloc);
                     }
                 };
-                errdefer {
-                    var it = tab.iterator();
-                    while (it.next()) |e| {
-                        e.value_ptr.deinit(self.alloc);
-                        self.alloc.free(e.key_ptr.*);
-                    }
-                    tab.deinit();
-                }
+                errdefer toml.deinit_r(table, self.alloc);
                 self.nested = true;
-                try self.parse_table(tab);
+                try self.parse_table(table);
             }
         }
     }
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
         var table = toml.TomlTable.init(self.alloc);
+        errdefer toml.deinit_r(&table, self.alloc);
+        var comma = false;
         self.advance();
         self.skip_whitespace();
         while (self.current()) |c| {
             if (c == '}') {
+                if (comma) return ParseError.TrailingComma;
                 self.advance();
                 return table;
             }
@@ -363,8 +360,11 @@ pub const Parser = struct {
             try add_key_value(&table, kv, self.alloc);
             self.skip_whitespace();
             if (self.current() == ',') {
+                comma = true;
                 self.advance();
                 self.skip_whitespace();
+            } else {
+                comma = false;
             }
         }
         return ParseError.ErrorEOF;

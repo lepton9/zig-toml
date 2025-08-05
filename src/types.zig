@@ -113,9 +113,18 @@ pub fn interpret_time(str: []const u8) !?Time {
     return t;
 }
 
+fn is_leap_year(year: u16) bool {
+    return (year % 4 == 0 and year % 100 != 0) or year % 400 == 0;
+}
+
 fn validate_date(date: Date) TypeError!void {
     if (date.month > 12 or date.month == 0) return TypeError.InvalidMonth;
-    if (date.day > 31 or date.day == 0) return TypeError.InvalidDay;
+    const days_in_month = [_]u5{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    var max_days = days_in_month[date.month - 1];
+    if (date.month == 2 and is_leap_year(date.year)) {
+        max_days = 29;
+    }
+    if (date.day == 0 or date.day > max_days) return TypeError.InvalidDay;
 }
 
 fn validate_time(time: Time) TypeError!void {

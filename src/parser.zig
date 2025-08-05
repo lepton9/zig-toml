@@ -17,6 +17,7 @@ pub const ParseError = error{
     KeyValueTypeOverride,
     DuplicateKeyValuePair,
     DuplicateTableHeader,
+    RedefinitionOfTable,
     ErrorEOF,
     ExpectedArray,
     ExpectedTable,
@@ -24,7 +25,7 @@ pub const ParseError = error{
 };
 
 const KeyValue = struct {
-    key: []const u8,
+    key_parts: []const []const u8,
     value: toml.TomlValue,
 };
 
@@ -133,6 +134,7 @@ pub const Parser = struct {
         return header;
     }
 
+    // TODO: deprecated
     fn build_nested_table(
         allocator: std.mem.Allocator,
         key_parts: []const []const u8,
@@ -166,22 +168,9 @@ pub const Parser = struct {
                 var value = try self.parse_value();
                 errdefer value.deinit(self.alloc);
                 const parts = try split_quote_aware(key, '.', self.alloc);
+                errdefer self.alloc.free(parts);
                 if (parts.len == 0) return ParseError.InvalidKey;
-                defer self.alloc.free(parts);
-                if (parts.len > 1) {
-                    const root_key = try types.interpret_key(parts[0]);
-                    const root_key_a = try self.alloc.dupe(u8, root_key);
-                    errdefer self.alloc.free(root_key_a);
-                    const table = try build_nested_table(self.alloc, parts[1..], value);
-                    return KeyValue{
-                        .key = root_key_a,
-                        .value = toml.TomlValue{ .table = table },
-                    };
-                } else {
-                    const k = try types.interpret_key(parts[0]);
-                    const key_a = try self.alloc.dupe(u8, k);
-                    return KeyValue{ .key = key_a, .value = value };
-                }
+                return KeyValue{ .key_parts = parts, .value = value };
             }
             self.advance();
             self.skip_comments_ws();
@@ -562,13 +551,14 @@ fn get_or_create_array(
             }
         } else {
             const new_table = toml.TomlTable.init(allocator);
-            const k = try allocator.dupe(u8, key);
+            var parts = std.ArrayList([]const u8).init(allocator);
+            try parts.append(key);
             try add_key_value(
                 table,
-                .{ .key = k, .value = toml.TomlValue{ .table = new_table } },
+                .{ .key_parts = try parts.toOwnedSlice(), .value = toml.TomlValue{ .table = new_table } },
                 allocator,
             );
-            table = &table.getEntry(k).?.value_ptr.table;
+            table = &table.getEntry(key).?.value_ptr.table;
         }
     }
     const final_key = key_parts[key_parts.len - 1];
@@ -581,10 +571,12 @@ fn get_or_create_array(
         return &entry.value_ptr.array;
     } else {
         const array = std.ArrayList(toml.TomlValue).init(allocator);
-        const k = try allocator.dupe(u8, try types.interpret_key(final_key));
+        var parts = std.ArrayList([]const u8).init(allocator);
+        const k = try types.interpret_key(final_key);
+        try parts.append(k);
         try add_key_value(
             table,
-            .{ .key = k, .value = toml.TomlValue{ .array = array } },
+            .{ .key_parts = try parts.toOwnedSlice(), .value = toml.TomlValue{ .array = array } },
             allocator,
         );
         return &table.getEntry(k).?.value_ptr.array;
@@ -646,29 +638,35 @@ fn nested_key_value(key_value: *const KeyValue) ?KeyValue {
     const table = key_value.value.table;
     var it = table.iterator();
     while (it.next()) |e| {
-        return KeyValue{ .key = e.key_ptr.*, .value = e.value_ptr.* };
+        return KeyValue{ .key_parts = e.key_ptr.*, .value = e.value_ptr.* };
     }
     return null;
 }
 
 fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
-    const entry = try root.getOrPut(key_value.key);
+    defer alloc.free(key_value.key_parts);
+    var current = try get_or_create_table(
+        root,
+        key_value.key_parts[0 .. key_value.key_parts.len - 1],
+        alloc,
+    );
+    const key = try alloc.dupe(
+        u8,
+        try types.interpret_key(key_value.key_parts[key_value.key_parts.len - 1]),
+    );
+    var value = key_value.value;
+    errdefer alloc.free(key);
+    errdefer value.deinit(alloc);
+    const entry = try current.getOrPut(key);
     if (entry.found_existing) {
         if (entry.value_ptr.* == .table) {
-            if (nested_key_value(&key_value)) |nested| {
-                var table = key_value.value.table;
-                defer table.deinit();
-                defer alloc.free(key_value.key);
-                return try add_key_value(&entry.value_ptr.table, nested, alloc);
-            }
+            if (key_value.key_parts.len == 1 and value == .table)
+                return ParseError.RedefinitionOfTable;
         }
-        var value = key_value.value;
-        alloc.free(key_value.key);
-        value.deinit(alloc);
         return ParseError.DuplicateKeyValuePair;
     }
-    entry.value_ptr.* = key_value.value;
-    entry.key_ptr.* = key_value.key;
+    entry.value_ptr.* = value;
+    entry.key_ptr.* = key;
 }
 
 fn contains(str: []const u8, c: u8) bool {

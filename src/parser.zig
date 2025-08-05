@@ -171,9 +171,10 @@ pub const Parser = struct {
                 errdefer self.alloc.free(parts);
                 if (parts.len == 0) return ParseError.InvalidKey;
                 return KeyValue{ .key_parts = parts, .value = value };
+            } else if (c == '\n') {
+                return ParseError.InvalidKey;
             }
             self.advance();
-            self.skip_comments_ws();
         }
         return ParseError.ErrorEOF;
     }

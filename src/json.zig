@@ -165,11 +165,15 @@ pub const Json = struct {
         const n = value.table.count();
         var i: u32 = 0;
         while (it.next()) |e| {
+            var key = e.key_ptr.*;
             try json.content.append('\n');
             indent.* += 2;
             for (0..indent.*) |_| try json.content.append(' ');
+            if (json.type_info and types.is_quoted(key) and key.len > 2) {
+                key = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
+            }
             try json.content.appendSlice(
-                try std.fmt.bufPrint(&json.buffer, "\"{s}\": ", .{e.key_ptr.*}),
+                try std.fmt.bufPrint(&json.buffer, "\"{s}\": ", .{key}),
             );
             try json.jsonify(e.value_ptr, indent);
             indent.* -= 2;

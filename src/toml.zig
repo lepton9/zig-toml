@@ -1,12 +1,9 @@
 const std = @import("std");
 const types = @import("types.zig");
 const Json = @import("json.zig").Json;
+
 pub const TomlTable = @import("table.zig").TomlTable;
-
 pub const TomlArray = std.ArrayList(TomlValue);
-
-pub fn deinit_table(table: *TomlTable, allocator: std.mem.Allocator) void {
-}
 
 pub fn deinit_array(array: *TomlArray, allocator: std.mem.Allocator) void {
     for (array.items) |*item| {
@@ -61,7 +58,7 @@ pub const TomlValue = union(enum) {
         switch (self.*) {
             .string => |str| alloc.free(str),
             .array => |*array| deinit_array(array, alloc),
-            .table => |*table| deinit_table(table, alloc),
+            .table => |*table| table.deinit(alloc),
             else => {},
         }
     }
@@ -72,24 +69,6 @@ pub const TomlValue = union(enum) {
         }
         return null;
     }
-
-    pub fn get_or(self: *TomlValue, key: []const u8, default: type) type {
-        const val = self.get(key);
-        if (val) |v| {
-            return v.value();
-        }
-        return default;
-    }
-
-    pub fn value(self: *TomlValue) type {
-        return switch (self.*) {
-            .int => self.int,
-            .float => self.float,
-            .bool => self.bool,
-            .string => self.string,
-            .array => self.array,
-            .table => self.table,
-        };
 
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var json = try Json.init(allocator, false);

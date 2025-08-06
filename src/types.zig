@@ -133,7 +133,7 @@ fn validate_time(time: Time) TypeError!void {
     if (time.second > 59) return TypeError.InvalidSecond;
 }
 
-fn is_quoted(s: []const u8) bool {
+pub fn is_quoted(s: []const u8) bool {
     return (s.len >= 2 and
         ((s[0] == '"' and s[s.len - 1] == '"') or
             (s[0] == '\'' and s[s.len - 1] == '\'')));

@@ -331,7 +331,7 @@ pub const Parser = struct {
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
         var table = toml.TomlTable.init_inline(self.alloc);
-        errdefer toml.deinit_table(&table, self.alloc);
+        errdefer table.deinit(self.alloc);
         var comma = false;
         self.advance();
         self.skip_whitespace();

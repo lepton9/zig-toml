@@ -161,8 +161,8 @@ pub const Json = struct {
 
     pub fn table_to_json(json: *Json, value: *const toml.TomlTable, indent: *usize) !void {
         try json.content.append('{');
-        var it = value.iterator();
-        const n = value.count();
+        var it = value.table.iterator();
+        const n = value.table.count();
         var i: u32 = 0;
         while (it.next()) |e| {
             try json.content.append('\n');

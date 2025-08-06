@@ -1,17 +1,11 @@
 const std = @import("std");
 const types = @import("types.zig");
 const Json = @import("json.zig").Json;
+pub const TomlTable = @import("table.zig").TomlTable;
 
-pub const TomlTable = std.StringHashMap(TomlValue);
 pub const TomlArray = std.ArrayList(TomlValue);
 
 pub fn deinit_table(table: *TomlTable, allocator: std.mem.Allocator) void {
-    var it = table.iterator();
-    while (it.next()) |e| {
-        e.value_ptr.deinit(allocator);
-        allocator.free(e.key_ptr.*);
-    }
-    table.deinit();
 }
 
 pub fn deinit_array(array: *TomlArray, allocator: std.mem.Allocator) void {
@@ -61,7 +55,7 @@ pub const TomlValue = union(enum) {
     table: TomlTable,
 
     pub fn init_table(allocator: std.mem.Allocator) TomlValue {
-        const table = TomlValue{ .table = TomlTable.init(allocator) };
+        const table = TomlValue{ .table = TomlTable.init(allocator, .explicit) };
         return table;
     }
 

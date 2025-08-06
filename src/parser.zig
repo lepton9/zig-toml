@@ -1,6 +1,7 @@
 const std = @import("std");
 const toml = @import("toml.zig");
 const types = @import("types.zig");
+const KeyValue = @import("table.zig").KeyValue;
 
 pub const ParseError = error{
     OpenFileError,
@@ -24,11 +25,6 @@ pub const ParseError = error{
     ExpectedArray,
     ExpectedTable,
     ExpectedArrayOfTables,
-};
-
-const KeyValue = struct {
-    key_parts: []const []const u8,
-    value: toml.TomlValue,
 };
 
 const ErrorContext = struct {
@@ -117,7 +113,7 @@ pub const Parser = struct {
                     try self.expect_skip_line();
                     const parts = try split_quote_aware(header, '.', self.alloc);
                     defer self.alloc.free(parts);
-                    const table = try create_table(root, parts, self.alloc);
+                    const table = try root.create_table(parts, self.alloc);
                     self.nested = true;
                     try self.parse_table(table);
                 }
@@ -131,7 +127,7 @@ pub const Parser = struct {
                     }
                     try self.expect_skip_line();
                 }
-                try add_key_value(root, kv, self.alloc);
+                try root.add_key_value(kv, self.alloc);
             }
             self.skip_while_char();
         }
@@ -297,8 +293,8 @@ pub const Parser = struct {
         key_parts: []const []const u8,
     ) anyerror!void {
         self.nested = true;
-        var array = try get_or_create_array(root, key_parts, self.alloc);
-        var table_toml = toml.TomlValue{ .table = toml.TomlTable.init(self.alloc) };
+        var array = try root.get_or_create_array(key_parts, self.alloc);
+        var table_toml = toml.TomlValue{ .table = toml.TomlTable.init_inline(self.alloc) };
         {
             errdefer table_toml.deinit(self.alloc);
             try self.parse_table(&table_toml.table);
@@ -316,12 +312,12 @@ pub const Parser = struct {
                 var nested_n: u8 = 0;
                 const table = blk: {
                     if (parts.len == 1) {
-                        break :blk try get_or_create_table(root, parts, self.alloc);
+                        break :blk try root.get_or_create_table(parts, self.alloc);
                     } else {
-                        const last_array = try get_last_array(root, parts[0 .. parts.len - 1], &nested_n);
+                        const last_array = try root.get_last_array(parts[0 .. parts.len - 1], &nested_n);
                         if (last_array.items.len == 0) return ParseError.ExpectedTable;
                         const last = &last_array.items[last_array.items.len - 1].table;
-                        break :blk try get_or_create_table(last, parts[nested_n..], self.alloc);
+                        break :blk try last.get_or_create_table(parts[nested_n..], self.alloc);
                     }
                 };
                 self.nested = true;
@@ -331,7 +327,7 @@ pub const Parser = struct {
     }
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
-        var table = toml.TomlTable.init(self.alloc);
+        var table = toml.TomlTable.init_inline(self.alloc);
         errdefer toml.deinit_table(&table, self.alloc);
         var comma = false;
         self.advance();
@@ -343,7 +339,7 @@ pub const Parser = struct {
                 return table;
             }
             const kv = try self.parse_key_value();
-            try add_key_value(&table, kv, self.alloc);
+            try table.add_key_value(kv, self.alloc);
             self.skip_whitespace();
             if (self.current() == ',') {
                 comma = true;
@@ -510,169 +506,6 @@ pub const Parser = struct {
         return self.content[self.index - n .. self.index];
     }
 };
-
-fn get_last_array(
-    root: *toml.TomlTable,
-    key_parts: []const []const u8,
-    nested_n: *u8,
-) anyerror!*std.ArrayList(toml.TomlValue) {
-    nested_n.* = 0;
-    var table = root;
-    var last_array: ?*std.ArrayList(toml.TomlValue) = null;
-    for (key_parts[0..key_parts.len]) |part| {
-        const key = try types.interpret_key(part);
-        if (table.getEntry(key)) |entry| {
-            if (entry.value_ptr.* == .table) {
-                table = &entry.value_ptr.table;
-                nested_n.* += 1;
-            } else if (entry.value_ptr.* == .array) {
-                last_array = &entry.value_ptr.array;
-                if (last_array.?.items.len == 0) return ParseError.ExpectedTable;
-                table = &last_array.?.items[last_array.?.items.len - 1].table;
-                nested_n.* += 1;
-            } else break;
-        } else break;
-    }
-    return last_array orelse ParseError.ExpectedArray;
-}
-
-fn get_or_create_array(
-    root: *toml.TomlTable,
-    key_parts: []const []const u8,
-    allocator: std.mem.Allocator,
-) anyerror!*std.ArrayList(toml.TomlValue) {
-    var table = root;
-    for (key_parts[0 .. key_parts.len - 1]) |part| {
-        const key = try types.interpret_key(part);
-        if (table.getEntry(key)) |entry| {
-            if (entry.value_ptr.* == .table) {
-                table = &entry.value_ptr.table;
-            } else if (entry.value_ptr.* == .array) {
-                const array: std.ArrayList(toml.TomlValue) = entry.value_ptr.array;
-                if (array.items.len == 0) return ParseError.ExpectedTable;
-                table = &array.items[array.items.len - 1].table;
-            } else {
-                return ParseError.ExpectedArray;
-            }
-        } else {
-            const new_table = toml.TomlTable.init(allocator);
-            var parts = std.ArrayList([]const u8).init(allocator);
-            try parts.append(key);
-            try add_key_value(
-                table,
-                .{ .key_parts = try parts.toOwnedSlice(), .value = toml.TomlValue{ .table = new_table } },
-                allocator,
-            );
-            table = &table.getEntry(key).?.value_ptr.table;
-        }
-    }
-    const final_key = key_parts[key_parts.len - 1];
-    if (table.getEntry(final_key)) |entry| {
-        if (entry.value_ptr.* != .array) return ParseError.ExpectedArray;
-        if (entry.value_ptr.array.items.len == 0) return ParseError.ExpectedArrayOfTables;
-        for (entry.value_ptr.array.items) |elem| {
-            if (elem != .table) return ParseError.ExpectedArrayOfTables;
-        }
-        return &entry.value_ptr.array;
-    } else {
-        const array = std.ArrayList(toml.TomlValue).init(allocator);
-        var parts = std.ArrayList([]const u8).init(allocator);
-        const k = try types.interpret_key(final_key);
-        try parts.append(k);
-        try add_key_value(
-            table,
-            .{ .key_parts = try parts.toOwnedSlice(), .value = toml.TomlValue{ .array = array } },
-            allocator,
-        );
-        return &table.getEntry(k).?.value_ptr.array;
-    }
-}
-
-fn get_or_create_table(
-    root: *toml.TomlTable,
-    key_parts: []const []const u8,
-    allocator: std.mem.Allocator,
-) !*toml.TomlTable {
-    var current = root;
-    for (key_parts) |part| {
-        const key = try types.interpret_key(part);
-        const entry = try current.getOrPut(key);
-        if (!entry.found_existing) {
-            const sub_table = toml.TomlValue.init_table(allocator);
-            entry.value_ptr.* = sub_table;
-            entry.key_ptr.* = try allocator.dupe(u8, key);
-            current = &entry.value_ptr.table;
-        } else if (entry.value_ptr.* != .table) {
-            return ParseError.InvalidTableNesting;
-        } else {
-            current = &entry.value_ptr.table;
-        }
-    }
-    return current;
-}
-
-fn create_table(
-    root: *toml.TomlTable,
-    key_parts: []const []const u8,
-    allocator: std.mem.Allocator,
-) !*toml.TomlTable {
-    var current = root;
-    var created = false;
-    for (key_parts) |part| {
-        const key = types.interpret_key(part) catch
-            return ParseError.InvalidTableHeader;
-        const entry = current.getEntry(key);
-        if (entry) |e| {
-            if (e.value_ptr.* != .table) return ParseError.KeyValueTypeOverride;
-            current = &e.value_ptr.table;
-        } else {
-            const k = try allocator.dupe(u8, key);
-            const e = try current.getOrPut(k);
-            e.value_ptr.* = toml.TomlValue.init_table(allocator);
-            e.key_ptr.* = k;
-            current = &e.value_ptr.table;
-            created = true;
-        }
-    }
-    if (!created) return ParseError.DuplicateTableHeader;
-    return current;
-}
-
-fn nested_key_value(key_value: *const KeyValue) ?KeyValue {
-    if (key_value.value != .table) return null;
-    const table = key_value.value.table;
-    var it = table.iterator();
-    while (it.next()) |e| {
-        return KeyValue{ .key_parts = e.key_ptr.*, .value = e.value_ptr.* };
-    }
-    return null;
-}
-
-fn add_key_value(root: *toml.TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
-    defer alloc.free(key_value.key_parts);
-    var current = try get_or_create_table(
-        root,
-        key_value.key_parts[0 .. key_value.key_parts.len - 1],
-        alloc,
-    );
-    const key = try alloc.dupe(
-        u8,
-        try types.interpret_key(key_value.key_parts[key_value.key_parts.len - 1]),
-    );
-    var value = key_value.value;
-    errdefer alloc.free(key);
-    errdefer value.deinit(alloc);
-    const entry = try current.getOrPut(key);
-    if (entry.found_existing) {
-        if (entry.value_ptr.* == .table) {
-            if (key_value.key_parts.len == 1 and value == .table)
-                return ParseError.RedefinitionOfTable;
-        }
-        return ParseError.DuplicateKeyValuePair;
-    }
-    entry.value_ptr.* = value;
-    entry.key_ptr.* = key;
-}
 
 fn contains(str: []const u8, c: u8) bool {
     for (str) |char| {

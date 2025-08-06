@@ -312,12 +312,12 @@ pub const Parser = struct {
                 var nested_n: u8 = 0;
                 const table = blk: {
                     if (parts.len == 1) {
-                        break :blk try root.get_or_create_table(parts, self.alloc);
+                        break :blk try root.get_or_create_table(parts, .explicit, self.alloc);
                     } else {
                         const last_array = try root.get_last_array(parts[0 .. parts.len - 1], &nested_n);
                         if (last_array.items.len == 0) return ParseError.ExpectedTable;
                         const last = &last_array.items[last_array.items.len - 1].table;
-                        break :blk try last.get_or_create_table(parts[nested_n..], self.alloc);
+                        break :blk try last.get_or_create_table(parts[nested_n..], .explicit, self.alloc);
                     }
                 };
                 self.nested = true;

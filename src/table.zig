@@ -49,7 +49,6 @@ pub const TomlTable = struct {
             allocator.free(e.key_ptr.*);
         }
         self.table.deinit();
-        // allocator.destroy(self);
     }
 
     pub fn get(self: *const TomlTable, key: []const u8) ?toml.TomlValue {
@@ -71,6 +70,7 @@ pub const TomlTable = struct {
                 current = &e.value_ptr.table;
                 if (i == key_parts.len - 1 and current.origin == .explicit)
                     return TableError.TableRedefinition;
+                current.origin = .explicit;
                 if (current.is_inline) return TableError.ImmutableInlineTable;
             } else {
                 const k = try allocator.dupe(u8, key);
@@ -89,6 +89,7 @@ pub const TomlTable = struct {
     pub fn get_or_create_table(
         root: *TomlTable,
         key_parts: []const []const u8,
+        origin_of_last: TableOrigin,
         allocator: std.mem.Allocator,
     ) !*TomlTable {
         var current = root;
@@ -98,7 +99,7 @@ pub const TomlTable = struct {
             if (!entry.found_existing) {
                 const sub_table = toml.TomlValue{ .table = TomlTable.init(
                     allocator,
-                    if (i == key_parts.len - 1) .explicit else .implicit,
+                    if (i == key_parts.len - 1) origin_of_last else .implicit,
                 ) };
                 entry.value_ptr.* = sub_table;
                 entry.key_ptr.* = try allocator.dupe(u8, key);
@@ -109,7 +110,7 @@ pub const TomlTable = struct {
                 current = &entry.value_ptr.table;
                 if (i == key_parts.len - 1) {
                     if (current.origin == .explicit) return TableError.TableRedefinition;
-                    current.origin = .explicit;
+                    current.origin = origin_of_last;
                 }
                 if (current.is_inline) return TableError.ImmutableInlineTable;
             }
@@ -200,10 +201,6 @@ pub const TomlTable = struct {
 
     pub fn add_key_value(root: *TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
         defer alloc.free(key_value.key_parts);
-        var current = try root.get_or_create_table(
-            key_value.key_parts[0 .. key_value.key_parts.len - 1],
-            alloc,
-        );
         const key = try alloc.dupe(
             u8,
             try types.interpret_key(key_value.key_parts[key_value.key_parts.len - 1]),
@@ -211,6 +208,11 @@ pub const TomlTable = struct {
         var value = key_value.value;
         errdefer alloc.free(key);
         errdefer value.deinit(alloc);
+        var current = try root.get_or_create_table(
+            key_value.key_parts[0 .. key_value.key_parts.len - 1],
+            .implicit,
+            alloc,
+        );
         const entry = try current.table.getOrPut(key);
         if (entry.found_existing) {
             if (entry.value_ptr.* != .table)

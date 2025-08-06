@@ -105,14 +105,15 @@ pub const Parser = struct {
                     if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
                     try self.expect_skip_line();
                     const parts = try split_quote_aware(array_key, '.', self.alloc);
-                    if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
                     defer self.alloc.free(parts);
+                    if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
                     try self.parse_array_of_tables(root, parts);
                 } else {
                     const header = try self.parse_table_header();
                     try self.expect_skip_line();
                     const parts = try split_quote_aware(header, '.', self.alloc);
                     defer self.alloc.free(parts);
+                    if (parts.len == 0) return ParseError.InvalidTableHeader;
                     const table = try root.create_table(parts, .header_t, self.alloc);
                     self.nested = true;
                     try self.parse_table(table);

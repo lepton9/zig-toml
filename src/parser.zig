@@ -113,7 +113,7 @@ pub const Parser = struct {
                     try self.expect_skip_line();
                     const parts = try split_quote_aware(header, '.', self.alloc);
                     defer self.alloc.free(parts);
-                    const table = try root.create_table(parts, self.alloc);
+                    const table = try root.create_table(parts, .header_t, self.alloc);
                     self.nested = true;
                     try self.parse_table(table);
                 }
@@ -294,7 +294,9 @@ pub const Parser = struct {
     ) anyerror!void {
         self.nested = true;
         var array = try root.get_or_create_array(key_parts, self.alloc);
-        var table_toml = toml.TomlValue{ .table = toml.TomlTable.init_inline(self.alloc) };
+        var table_toml = toml.TomlValue{
+            .table = toml.TomlTable.init(self.alloc, .array_t, .explicit),
+        };
         {
             errdefer table_toml.deinit(self.alloc);
             try self.parse_table(&table_toml.table);
@@ -312,12 +314,12 @@ pub const Parser = struct {
                 var nested_n: u8 = 0;
                 const table = blk: {
                     if (parts.len == 1) {
-                        break :blk try root.get_or_create_table(parts, .explicit, self.alloc);
+                        break :blk try root.get_or_create_table(parts, .array_t, .explicit, self.alloc);
                     } else {
                         const last_array = try root.get_last_array(parts[0 .. parts.len - 1], &nested_n);
                         if (last_array.items.len == 0) return ParseError.ExpectedTable;
                         const last = &last_array.items[last_array.items.len - 1].table;
-                        break :blk try last.get_or_create_table(parts[nested_n..], .explicit, self.alloc);
+                        break :blk try last.get_or_create_table(parts[nested_n..], .array_t, .explicit, self.alloc);
                     }
                 };
                 self.nested = true;

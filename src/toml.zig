@@ -21,7 +21,10 @@ pub const Toml = struct {
 
     pub fn init(allocator: std.mem.Allocator) !*Toml {
         const t = try allocator.create(Toml);
-        t.* = .{ .table = TomlValue.init_table(allocator), .alloc = allocator };
+        t.* = .{
+            .table = .{ .table = TomlTable.init(allocator, .root, .explicit) },
+            .alloc = allocator,
+        };
         return t;
     }
 
@@ -53,11 +56,6 @@ pub const TomlValue = union(enum) {
     datetime: types.DateTime,
     array: TomlArray,
     table: TomlTable,
-
-    pub fn init_table(allocator: std.mem.Allocator) TomlValue {
-        const table = TomlValue{ .table = TomlTable.init(allocator, .explicit) };
-        return table;
-    }
 
     pub fn deinit(self: *TomlValue, alloc: std.mem.Allocator) void {
         switch (self.*) {

@@ -125,6 +125,8 @@ pub const TomlTable = struct {
                     if (current.origin == .explicit) return TableError.TableRedefinition;
                     current.origin = origin_of_last;
                 }
+                if (current.t_type == .header_t and table_type != .header_t)
+                    return TableError.TableRedefinition;
                 if (current.t_type == .inline_t) return TableError.ImmutableInlineTable;
             }
         }

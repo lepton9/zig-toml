@@ -247,9 +247,9 @@ pub const Parser = struct {
             'r' => try output.append('\r'),
             '\"' => try output.append('\"'),
             '\\' => try output.append('\\'),
-            '\r', '\n' => {
+            '\r', '\n', ' ' => {
                 if (multiline) {
-                    self.skip_while_char();
+                    try self.expect_skip_backslash(c == ' ');
                 } else {
                     return ParseError.InvalidChar;
                 }
@@ -432,6 +432,19 @@ pub const Parser = struct {
             if (c == '\n') {
                 self.advance();
                 break;
+            }
+            self.advance();
+        }
+    }
+
+    fn expect_skip_backslash(self: *Parser, expect_newline: bool) !void {
+        var newline = false;
+        while (self.current()) |c| {
+            if (c == '\n') {
+                newline = true;
+            } else if (c != ' ') {
+                if (!newline and expect_newline) return ParseError.InvalidChar;
+                return;
             }
             self.advance();
         }

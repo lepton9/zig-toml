@@ -91,7 +91,7 @@ pub const Json = struct {
         if (json.type_info) {
             return try json.content.appendSlice(try std.fmt.bufPrint(
                 &json.buffer,
-                "{{\"type\": \"date\", \"value\": \"{:0>4}-{:0>2}-{:0>2}\"}}",
+                "{{\"type\": \"date-local\", \"value\": \"{:0>4}-{:0>2}-{:0>2}\"}}",
                 .{ value.year, value.month, value.day },
             ));
         }
@@ -106,7 +106,7 @@ pub const Json = struct {
         if (json.type_info) {
             return try json.content.appendSlice(try std.fmt.bufPrint(
                 &json.buffer,
-                "{{\"type\": \"time\", \"value\": \"{:0>2}:{:0>2}:{:0>2}.{}\"}}",
+                "{{\"type\": \"time-local\", \"value\": \"{:0>2}:{:0>2}:{:0>2}.{}\"}}",
                 .{ value.hour, value.minute, value.second, value.nanosecond },
             ));
         }
@@ -119,19 +119,45 @@ pub const Json = struct {
 
     pub fn datetime_to_json(json: *Json, value: *const types.DateTime) !void {
         if (json.type_info) {
-            return try json.content.appendSlice(try std.fmt.bufPrint(
-                &json.buffer,
-                "{{\"type\": \"datetime\", \"value\": \"{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}\"}}",
-                .{
-                    value.date.year,
-                    value.date.month,
-                    value.date.day,
-                    value.time.hour,
-                    value.time.minute,
-                    value.time.second,
-                    value.time.nanosecond,
-                },
-            ));
+            var datetime: []u8 = undefined;
+            if (value.offset_minutes) |offset| {
+                var buf: [64]u8 = undefined;
+                const hours: u5 = @intCast(@divTrunc(@abs(offset), 60));
+                const minutes: u6 = @intCast(@mod(@abs(offset), 60));
+                const offset_str = if (offset >= 0)
+                    try std.fmt.bufPrint(&buf, "+{:0>2}:{:0>2}", .{ hours, minutes })
+                else
+                    try std.fmt.bufPrint(&buf, "-{:0>2}:{:0>2}", .{ hours, minutes });
+                datetime = try std.fmt.bufPrint(
+                    &json.buffer,
+                    "{{\"type\": \"datetime\", \"value\": \"{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}{s}\"}}",
+                    .{
+                        value.date.year,
+                        value.date.month,
+                        value.date.day,
+                        value.time.hour,
+                        value.time.minute,
+                        value.time.second,
+                        value.time.nanosecond,
+                        offset_str,
+                    },
+                );
+            } else {
+                datetime = try std.fmt.bufPrint(
+                    &json.buffer,
+                    "{{\"type\": \"datetime-local\", \"value\": \"{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}.{}\"}}",
+                    .{
+                        value.date.year,
+                        value.date.month,
+                        value.date.day,
+                        value.time.hour,
+                        value.time.minute,
+                        value.time.second,
+                        value.time.nanosecond,
+                    },
+                );
+            }
+            return try json.content.appendSlice(datetime);
         }
         try json.content.appendSlice(try std.fmt.bufPrint(
             &json.buffer,

@@ -192,11 +192,15 @@ pub const Parser = struct {
     }
 
     fn invalid_string_delim(self: *Parser, delimiter: []const u8) bool {
-        return (std.mem.eql(
+        if (std.mem.eql(
             u8,
             delimiter,
             self.look_behind(delimiter.len) orelse return true,
-        ));
+        )) {
+            return !(self.index >= delimiter.len + 1 and
+                self.content[self.index - delimiter.len - 1] == '\\');
+        }
+        return false;
     }
 
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {

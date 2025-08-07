@@ -72,10 +72,9 @@ pub fn interpret_datetime(str: []const u8) !?DateTime {
         std.mem.indexOf(u8, str[time_start..], "+") orelse
         std.mem.indexOf(u8, str[time_start..], "-") orelse
         str.len - time_start);
-    const offset = if (time_end == str.len or str[time_end] == 'Z')
+    const offset = if (time_end == str.len)
         null
-    else
-        try interpret_time_offset(str[time_end..]);
+    else if (str[time_end] == 'Z') 0 else try interpret_time_offset(str[time_end..]);
     const dt: DateTime = .{
         .date = try interpret_date(str[0..10]) orelse return null,
         .time = try interpret_time(str[time_start..time_end]) orelse return null,

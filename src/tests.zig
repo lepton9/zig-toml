@@ -214,7 +214,7 @@ test "datetime" {
             .minute = 32,
             .second = 0,
         },
-        .offset_minutes = null,
+        .offset_minutes = 0,
     }));
     try std.testing.expect(t.get("odt2").?.datetime.offset_minutes == -7 * 60);
     try std.testing.expect(t.get("odt3").?.datetime.time.nanosecond == 999999000);
@@ -222,8 +222,12 @@ test "datetime" {
         std.meta.eql(t.get("odt1").?.datetime, t.get("odt4").?.datetime),
     );
     try std.testing.expect(
-        std.meta.eql(t.get("odt4").?.datetime, t.get("ldt1").?.datetime),
+        std.meta.eql(t.get("odt4").?.datetime.date, t.get("ldt1").?.datetime.date),
     );
+    try std.testing.expect(
+        std.meta.eql(t.get("odt4").?.datetime.time, t.get("ldt1").?.datetime.time),
+    );
+    try std.testing.expect(t.get("ldt1").?.datetime.offset_minutes == null);
     try std.testing.expect(t.get("ldt2").?.datetime.time.nanosecond == 999999000);
     try std.testing.expect(std.meta.eql(t.get("ld1").?.date, types.Date{
         .day = 27,
@@ -393,7 +397,7 @@ test "array_of_tables" {
         t.get("products").?.array.items.len == 3,
     );
     try std.testing.expect(
-        t.get("products").?.array.items[1].table.count() == 0,
+        t.get("products").?.array.items[1].table.table.count() == 0,
     );
     try std.testing.expect(
         t.get("fruits").?.array.items.len == 2,

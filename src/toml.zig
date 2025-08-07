@@ -70,6 +70,16 @@ pub const TomlValue = union(enum) {
         return null;
     }
 
+    pub fn getEntry(
+        self: *const TomlValue,
+        key: []const u8,
+    ) ?std.StringHashMap(TomlValue).Entry {
+        if (self.* == TomlValue.table) {
+            return self.table.getEntry(types.interpret_key(key) catch return null);
+        }
+        return null;
+    }
+
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var json = try Json.init(allocator, false);
         errdefer json.deinit();

@@ -62,6 +62,13 @@ pub const TomlTable = struct {
         return self.table.get(types.interpret_key(key) catch return null);
     }
 
+    pub fn getEntry(
+        self: *const TomlTable,
+        key: []const u8,
+    ) ?std.StringHashMap(toml.TomlValue).Entry {
+        return self.table.getEntry(types.interpret_key(key) catch return null);
+    }
+
     pub fn create_table(
         root: *TomlTable,
         key_parts: []const []const u8,

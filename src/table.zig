@@ -76,12 +76,16 @@ pub const TomlTable = struct {
             if (entry) |e| {
                 if (e.value_ptr.* != .table) return TableError.ExpectedTable;
                 current = &e.value_ptr.table;
-                if (i == key_parts.len - 1 and current.origin == .explicit)
-                    return TableError.TableRedefinition;
-                if (table_type == .header_t and current.t_type != .header_t)
-                    return TableError.TableRedefinition;
-                current.origin = .explicit;
                 if (current.t_type == .inline_t) return TableError.ImmutableInlineTable;
+                if (table_type == .header_t and current.t_type != .header_t) {
+                    if (!(current.t_type == .dotted_t and i < key_parts.len - 1)) {
+                        return TableError.TableRedefinition;
+                    }
+                }
+                if (i == key_parts.len - 1) {
+                    if (current.origin == .explicit) return TableError.TableRedefinition;
+                    current.origin = .explicit;
+                }
             } else {
                 const k = try allocator.dupe(u8, key);
                 const e = try current.table.getOrPut(k);

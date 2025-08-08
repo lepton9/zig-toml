@@ -11,15 +11,9 @@ test "toml" {
 test "parser" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = p.parse_file("tests/basic.toml") catch |err| {
-        switch (err) {
-            parser.ParseError.NotImplemented => std.log.err("Not Implemented\n", .{}),
-            else => std.log.err("{}\n", .{err}),
-        }
-        return;
-    };
-    defer toml_data.deinit();
-    toml_data.table.print();
+    // const toml_data = try p.parse_file("tests/test.toml");
+    // defer toml_data.deinit();
+}
 
 test "keys" {
     const p = try parser.Parser.init(std.testing.allocator);

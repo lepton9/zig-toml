@@ -4,6 +4,8 @@ on:
   pull_request:
     branches:
       - master
+  workflow_dispatch:
+
 jobs:
   test:
     strategy:
@@ -11,7 +13,7 @@ jobs:
         zig-version: ['0.14.1']
 
     runs-on: ubuntu-latest
-    name: Run tests on Zig ${{ matrix.zig-version }}
+    name: Test
     steps:
       - uses: actions/checkout@v4
       - uses: goto-bus-stop/setup-zig@v2

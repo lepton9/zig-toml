@@ -10,7 +10,6 @@
         multi_line_array = [
             "]",
             # ] comment inside array
-
             ]
 
     [[table_array]]

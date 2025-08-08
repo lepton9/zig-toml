@@ -11,8 +11,8 @@ test "toml" {
 test "parser" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    // const toml_data = try p.parse_file("tests/test.toml");
-    // defer toml_data.deinit();
+    const toml_data = try p.parse_file("tests/test.toml");
+    defer toml_data.deinit();
 }
 
 test "keys" {

@@ -1,0 +1,21 @@
+
+    [table]
+  string="# Some text #"
+
+    [table.tab.test]    
+    array = [ "] ", " # "]
+        array2 = [ "Closing bracket ] inside string", "[]" ]
+    string = " Not a comment #" # this is comment #
+        [table.tab]
+        multi_line_array = [
+            "]",
+            # ] comment inside array
+
+            ]
+
+    [[table_array]]
+
+array_array = [[[[[{}]]]]]
+
+          key          =          "some spaces"          
+

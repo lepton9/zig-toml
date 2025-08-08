@@ -17,6 +17,7 @@ pub const TableError = error{
     ExpectedTable,
     ExpectedArray,
     ExpectedArrayOfTables,
+    KeyValueRedefinition,
 };
 
 const TableOrigin = enum {
@@ -246,7 +247,7 @@ pub const TomlTable = struct {
                 return TableError.DuplicateKeyValuePair;
             if (entry.value_ptr.table.t_type == .inline_t)
                 return TableError.ImmutableInlineTable;
-            if (value.table.t_type == .inline_t) return TableError.TableRedefinition;
+            return TableError.KeyValueRedefinition;
         }
         entry.value_ptr.* = value;
         entry.key_ptr.* = key;

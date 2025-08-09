@@ -18,3 +18,8 @@ array_array = [[[[[{}]]]]]
 
           key          =          "some spaces"          
 
+[equals] # equals sign inside key
+
+"=~!@$^&*()_+-`1234567890[]|/?><.,;:'=" = 1
+'=' = { "=" = "="}
+

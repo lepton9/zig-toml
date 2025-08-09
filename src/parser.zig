@@ -144,21 +144,53 @@ pub const Parser = struct {
     }
 
     fn parse_key_value(self: *Parser) !KeyValue {
-        const start = self.index;
+        const key_parts = try self.parse_key();
+        errdefer self.alloc.free(key_parts);
+        var value = try self.parse_value();
+        errdefer value.deinit(self.alloc);
+        if (key_parts.len == 0) return ParseError.InvalidKey;
+        return KeyValue{ .key_parts = key_parts, .value = value };
+    }
+
+    fn parse_key(self: *Parser) ![]const []const u8 {
+        var parts = std.ArrayList([]const u8).init(self.alloc);
+        errdefer parts.deinit();
+        var start: ?usize = null;
+        self.skip_whitespace();
         while (self.current()) |c| {
-            if (c == '=') {
-                const key = std.mem.trim(u8, self.content[start..self.index], " \t");
-                self.advance();
-                var value = try self.parse_value();
-                errdefer value.deinit(self.alloc);
-                const parts = try split_quote_aware(key, '.', self.alloc);
-                errdefer self.alloc.free(parts);
-                if (parts.len == 0) return ParseError.InvalidKey;
-                return KeyValue{ .key_parts = parts, .value = value };
-            } else if (c == '\n') {
-                return ParseError.InvalidKey;
+            switch (c) {
+                '=' => {
+                    if (start) |i| {
+                        try parts.append(std.mem.trim(u8, self.content[i..self.index], " \t"));
+                    }
+                    self.advance();
+                    return try parts.toOwnedSlice();
+                },
+                '\"', '\'' => {
+                    if (start) |_| return ParseError.InvalidKey;
+                    const delim = self.content[self.index .. self.index + 1];
+                    start = self.index;
+                    const key_part = try self.parse_string_value(delim);
+                    defer self.alloc.free(key_part);
+                    self.skip_whitespace();
+                },
+                '.' => {
+                    if (start) |i| {
+                        try parts.append(std.mem.trim(u8, self.content[i..self.index], " \t"));
+                        start = null;
+                    }
+                    if (parts.items.len == 0) return ParseError.InvalidKey;
+                    self.advance();
+                    self.skip_whitespace();
+                },
+                '\n' => return ParseError.InvalidKey,
+                else => {
+                    if (start == null) {
+                        start = self.index;
+                    }
+                    self.advance();
+                },
             }
-            self.advance();
         }
         return ParseError.ErrorEOF;
     }

@@ -147,6 +147,10 @@ fn all(str: []const u8, func: fn (u8) bool) bool {
     return true;
 }
 
-pub fn is_quote(char: u8) bool {
-    return char == '"' or char == '\'';
+pub fn is_quote(c: u8) bool {
+    return c == '"' or c == '\'';
+}
+
+pub fn is_whitespace(c: u8) bool {
+    return c == ' ' or c == '\t';
 }

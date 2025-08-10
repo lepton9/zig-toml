@@ -279,7 +279,7 @@ pub const Parser = struct {
             'r' => try output.append('\r'),
             '\"' => try output.append('\"'),
             '\\' => try output.append('\\'),
-            '\r', '\n', ' ' => {
+            '\r', '\n', ' ', '\t' => {
                 if (multiline) {
                     try self.expect_skip_backslash(c == ' ');
                 } else {
@@ -451,7 +451,7 @@ pub const Parser = struct {
 
     fn skip_whitespace(self: *Parser) void {
         while (self.current()) |c| {
-            if (c == ' ' or c == '\t') {
+            if (types.is_whitespace(c)) {
                 self.advance();
             } else {
                 break;
@@ -479,7 +479,7 @@ pub const Parser = struct {
         while (self.current()) |c| {
             if (c == '\n') {
                 newline = true;
-            } else if (c != ' ') {
+            } else if (!types.is_whitespace(c)) {
                 if (!newline and expect_newline) return ParseError.InvalidChar;
                 return;
             }
@@ -492,7 +492,7 @@ pub const Parser = struct {
             if (c == '\n' or c == '\r' or c == '#') {
                 return try self.skip_line();
             }
-            if (c != ' ') return ParseError.InlineDefinition;
+            if (!types.is_whitespace(c)) return ParseError.InlineDefinition;
             self.advance();
         }
     }

@@ -93,7 +93,7 @@ pub const Parser = struct {
     }
 
     fn parse_table(self: *Parser, root: *toml.TomlTable) !void {
-        self.skip_while_char();
+        try self.skip_while_char();
         while (self.current()) |c| {
             if (c == '[') {
                 if (self.nested) {
@@ -130,7 +130,7 @@ pub const Parser = struct {
                 }
                 try root.add_key_value(kv, self.alloc);
             }
-            self.skip_while_char();
+            try self.skip_while_char();
         }
     }
 
@@ -242,7 +242,7 @@ pub const Parser = struct {
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
         if (is_multiline and (self.current() == '\n' or self.current() == '\\'))
-            self.skip_while_char();
+            try self.skip_while_char();
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {
@@ -307,7 +307,7 @@ pub const Parser = struct {
         var array = std.ArrayList(toml.TomlValue).init(self.alloc);
         errdefer toml.deinit_array(&array, self.alloc);
         self.advance();
-        self.skip_while_char();
+        try self.skip_while_char();
         while (self.current()) |c| {
             if (c == ']') {
                 self.advance();
@@ -315,10 +315,10 @@ pub const Parser = struct {
             }
             const value = try self.parse_value();
             try array.append(value);
-            self.skip_while_char();
+            try self.skip_while_char();
             if (self.current() == ',') {
                 self.advance();
-                self.skip_while_char();
+                try self.skip_while_char();
             }
         }
         return ParseError.ErrorEOF;
@@ -459,9 +459,14 @@ pub const Parser = struct {
         }
     }
 
-    fn skip_line(self: *Parser) void {
+    fn skip_line(self: *Parser) !void {
         while (self.current()) |c| {
-            if (c == '\n') {
+            if (c == '\r') {
+                const n = try self.try_next();
+                if (n != '\n') return ParseError.InvalidChar;
+                self.advance();
+                break;
+            } else if (c == '\n') {
                 self.advance();
                 break;
             }
@@ -484,30 +489,28 @@ pub const Parser = struct {
 
     fn expect_skip_line(self: *Parser) !void {
         while (self.current()) |c| {
-            if (c == '\n') {
-                self.advance();
-                break;
-            } else if (c == '#') return self.skip_line();
+            if (c == '\n' or c == '\r' or c == '#') {
+                return try self.skip_line();
+            }
             if (c != ' ') return ParseError.InlineDefinition;
             self.advance();
         }
     }
 
-    fn skip_while_char(self: *Parser) void {
-        self.skip_comments_ws();
-        if (self.current() == '\n' or self.current() == '#') {
-            self.skip_comments_ws();
-            self.skip_while_char();
+    fn skip_while_char(self: *Parser) !void {
+        try self.skip_comments_ws();
+        const c = self.current();
+        if (c == '\n' or c == '\r' or c == '#') {
+            try self.skip_comments_ws();
+            try self.skip_while_char();
         }
     }
 
-    fn skip_comments_ws(self: *Parser) void {
+    fn skip_comments_ws(self: *Parser) !void {
         self.skip_whitespace();
         while (self.current()) |c| {
-            if (c == '#') {
-                self.skip_line();
-            } else if (c == '\n' or c == '\r') {
-                self.advance();
+            if (c == '\n' or c == '\r' or c == '#') {
+                try self.skip_line();
             } else {
                 break;
             }

@@ -61,20 +61,20 @@ pub fn interpret_time_offset(str: []const u8) !i16 {
     if (str.len < 6 or str[3] != ':') return TypeError.InvalidTimeOffset;
     const hour = std.fmt.parseInt(i16, str[0..3], 10) catch return TypeError.InvalidTimeOffset;
     const minutes = std.fmt.parseInt(i16, str[4..], 10) catch return TypeError.InvalidTimeOffset;
-    if (hour > 11 or hour < -11 or minutes > 59) return TypeError.InvalidTimeOffset;
+    if (hour > 23 or hour < -23 or minutes > 59) return TypeError.InvalidTimeOffset;
     return hour * 60 + std.math.sign(hour) * minutes;
 }
 
 pub fn interpret_datetime(str: []const u8) !?DateTime {
-    if (str.len < 19 or (str[10] != 'T' and str[10] != ' ')) return null;
+    if (str.len < 19 or (str[10] != 'T' and str[10] != 't' and str[10] != ' ')) return null;
     const time_start = 11;
-    const time_end = time_start + (std.mem.indexOf(u8, str[time_start..], "Z") orelse
-        std.mem.indexOf(u8, str[time_start..], "+") orelse
-        std.mem.indexOf(u8, str[time_start..], "-") orelse
+    const index_z: ?usize = std.mem.indexOfAny(u8, str[time_start..], "Zz");
+    const time_end = time_start + (index_z orelse
+        std.mem.indexOfAny(u8, str[time_start..], "+-") orelse
         str.len - time_start);
     const offset = if (time_end == str.len)
         null
-    else if (str[time_end] == 'Z') 0 else try interpret_time_offset(str[time_end..]);
+    else if (index_z) |_| 0 else try interpret_time_offset(str[time_end..]);
     const dt: DateTime = .{
         .date = try interpret_date(str[0..10]) orelse return null,
         .time = try interpret_time(str[time_start..time_end]) orelse return null,

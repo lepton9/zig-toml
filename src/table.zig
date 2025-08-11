@@ -33,14 +33,16 @@ const TableType = enum {
     dotted_t,
 };
 
+pub const TomlHashMap = std.StringArrayHashMap(toml.TomlValue);
+
 pub const TomlTable = struct {
-    table: std.StringHashMap(toml.TomlValue),
+    table: TomlHashMap,
     t_type: TableType,
     origin: TableOrigin,
 
     pub fn init(allocator: std.mem.Allocator, t_type: TableType, origin: TableOrigin) TomlTable {
         return .{
-            .table = std.StringHashMap(toml.TomlValue).init(allocator),
+            .table = TomlHashMap.init(allocator),
             .t_type = t_type,
             .origin = origin,
         };
@@ -66,7 +68,7 @@ pub const TomlTable = struct {
     pub fn getEntry(
         self: *const TomlTable,
         key: []const u8,
-    ) ?std.StringHashMap(toml.TomlValue).Entry {
+    ) ?TomlHashMap.Entry {
         return self.table.getEntry(types.interpret_key(key) catch return null);
     }
 

@@ -1,8 +1,8 @@
 const std = @import("std");
 const types = @import("types.zig");
+const tab = @import("table.zig");
 const Json = @import("json.zig").Json;
-
-pub const TomlTable = @import("table.zig").TomlTable;
+pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
 
 pub fn deinit_array(array: *TomlArray, allocator: std.mem.Allocator) void {
@@ -73,7 +73,7 @@ pub const TomlValue = union(enum) {
     pub fn getEntry(
         self: *const TomlValue,
         key: []const u8,
-    ) ?std.StringHashMap(TomlValue).Entry {
+    ) ?tab.TomlHashMap.Entry {
         if (self.* == TomlValue.table) {
             return self.table.getEntry(types.interpret_key(key) catch return null);
         }

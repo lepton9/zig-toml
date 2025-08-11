@@ -478,7 +478,9 @@ pub const Parser = struct {
         var newline = false;
         while (self.current()) |c| {
             if (c == '\n') {
+                try self.skip_line();
                 newline = true;
+                continue;
             } else if (!types.is_whitespace(c)) {
                 if (!newline and expect_newline) return ParseError.InvalidChar;
                 return;
@@ -563,10 +565,7 @@ pub const Parser = struct {
 };
 
 fn contains(str: []const u8, c: u8) bool {
-    for (str) |char| {
-        if (char == c) return true;
-    }
-    return false;
+    return std.mem.indexOfScalar(u8, str, c) != null;
 }
 
 fn handle_quote(quote: *?u8, c: u8) void {

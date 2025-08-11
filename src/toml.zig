@@ -1,8 +1,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const tab = @import("table.zig");
-const Json = @import("json.zig").Json;
-const Encoder = @import("encode.zig").Encoder;
+const encode = @import("encode.zig");
 pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
 
@@ -86,25 +85,25 @@ pub const TomlValue = union(enum) {
     }
 
     pub fn to_toml(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
-        var toml_str = try Encoder.init(allocator, false);
+        var toml_str = try encode.TomlEncoder.init(allocator);
         errdefer toml_str.deinit();
         try toml_str.to_toml(self, null);
         return toml_str.to_owned();
     }
 
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
-        var json = try Json.init(allocator, false);
+        var json = try encode.JsonEncoder.init(allocator, false);
         errdefer json.deinit();
         var indent: usize = 0;
-        try json.jsonify(self, &indent);
+        try json.to_json(self, &indent);
         return json.to_owned();
     }
 
     pub fn to_json_with_types(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
-        var json = try Json.init(allocator, true);
+        var json = try encode.JsonEncoder.init(allocator, true);
         errdefer json.deinit();
         var indent: usize = 0;
-        try json.jsonify(self, &indent);
+        try json.to_json(self, &indent);
         return json.to_owned();
     }
 };

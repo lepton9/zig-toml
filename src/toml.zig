@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const tab = @import("table.zig");
 const Json = @import("json.zig").Json;
+const Encoder = @import("encode.zig").Encoder;
 pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
 
@@ -36,6 +37,10 @@ pub const Toml = struct {
 
     pub fn to_json(self: *const Toml) ![]const u8 {
         return try self.table.to_json(self.alloc);
+    }
+
+    pub fn to_toml(self: *const Toml) ![]const u8 {
+        return try self.table.to_toml(self.alloc);
     }
 
     pub fn to_json_with_types(self: *const Toml) ![]const u8 {
@@ -78,6 +83,13 @@ pub const TomlValue = union(enum) {
             return self.table.getEntry(types.interpret_key(key) catch return null);
         }
         return null;
+    }
+
+    pub fn to_toml(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+        var toml_str = try Encoder.init(allocator, false);
+        errdefer toml_str.deinit();
+        try toml_str.to_toml(self, null);
+        return toml_str.to_owned();
     }
 
     pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {

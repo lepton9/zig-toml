@@ -65,11 +65,26 @@ pub const TomlTable = struct {
         return self.table.get(types.interpret_key(key) catch return null);
     }
 
+    pub fn getPtr(self: *const TomlTable, key: []const u8) ?*toml.TomlValue {
+        return self.table.getPtr(types.interpret_key(key) catch return null);
+    }
+
     pub fn getEntry(
         self: *const TomlTable,
         key: []const u8,
     ) ?TomlHashMap.Entry {
         return self.table.getEntry(types.interpret_key(key) catch return null);
+    }
+
+    pub fn put(
+        self: *TomlTable,
+        key: []const u8,
+        value: toml.TomlValue,
+        allocator: std.mem.Allocator,
+    ) !void {
+        const parts = try types.split_dotted_key(key, allocator);
+        const key_value: KeyValue = .{ .key_parts = parts, .value = value };
+        try self.add_key_value(key_value, allocator);
     }
 
     pub fn create_table(

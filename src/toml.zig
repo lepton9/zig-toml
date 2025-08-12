@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const tab = @import("table.zig");
 const encode = @import("encode.zig");
+pub const TomlHashMap = tab.TomlHashMap;
 pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
 
@@ -38,7 +39,7 @@ pub const Toml = struct {
         return try self.table.to_json(self.alloc);
     }
 
-    pub fn to_toml(self: *const Toml) ![]const u8 {
+    pub fn to_toml(self: *Toml) ![]const u8 {
         return try self.table.to_toml(self.alloc);
     }
 
@@ -74,17 +75,36 @@ pub const TomlValue = union(enum) {
         return null;
     }
 
+    pub fn getPtr(self: *const TomlValue, key: []const u8) ?*TomlValue {
+        if (self.* == TomlValue.table) {
+            return self.table.getPtr(types.interpret_key(key) catch return null);
+        }
+        return null;
+    }
+
     pub fn getEntry(
         self: *const TomlValue,
         key: []const u8,
-    ) ?tab.TomlHashMap.Entry {
+    ) ?TomlHashMap.Entry {
         if (self.* == TomlValue.table) {
             return self.table.getEntry(types.interpret_key(key) catch return null);
         }
         return null;
     }
 
-    pub fn to_toml(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn put(
+        self: *TomlValue,
+        key: []const u8,
+        value: TomlValue,
+        allocator: std.mem.Allocator,
+    ) !void {
+        if (self.* == TomlValue.table) {
+            return self.table.put(key, value, allocator);
+        }
+        return error.NotATable;
+    }
+
+    pub fn to_toml(self: *TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var toml_str = try encode.TomlEncoder.init(allocator);
         errdefer toml_str.deinit();
         try toml_str.to_toml(self, null);

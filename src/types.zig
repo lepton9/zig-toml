@@ -154,3 +154,61 @@ pub fn is_quote(c: u8) bool {
 pub fn is_whitespace(c: u8) bool {
     return c == ' ' or c == '\t';
 }
+
+fn handle_quote(quote: *?u8, c: u8) void {
+    if (quote.* == null) {
+        quote.* = c;
+    } else if (quote.* == c) {
+        quote.* = null;
+    }
+}
+
+fn last_indexof_qa(str: []const u8, char: u8) ?usize {
+    var quote: ?u8 = null;
+    for (0..str.len) |i| {
+        const c = str[str.len - 1 - i];
+        if (is_quote(c)) {
+            handle_quote(&quote, c);
+        } else if (c == char and quote == null) {
+            return str.len - 1 - i;
+        }
+    }
+    return null;
+}
+
+fn indexof_qa(str: []const u8, char: u8) ?usize {
+    var quote: ?u8 = null;
+    for (str, 0..) |c, i| {
+        if (is_quote(c)) {
+            handle_quote(&quote, c);
+        } else if (c == char and quote == null) {
+            return i;
+        }
+    }
+    return null;
+}
+
+fn split_quote_aware(
+    str: []const u8,
+    delim: u8,
+    allocator: std.mem.Allocator,
+) ![]const []const u8 {
+    var parts = std.ArrayList([]const u8).init(allocator);
+    var start: usize = 0;
+    while (indexof_qa(str[start..], delim)) |ind| {
+        const part = str[start .. start + ind];
+        try parts.append(std.mem.trim(u8, part, " \t"));
+        start += ind + 1;
+    }
+    if (start < str.len) {
+        try parts.append(std.mem.trim(u8, str[start..], " \t"));
+    }
+    return try parts.toOwnedSlice();
+}
+
+pub fn split_dotted_key(
+    str: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const []const u8 {
+    return try split_quote_aware(str, '.', allocator);
+}

@@ -110,14 +110,14 @@ pub const Parser = struct {
                     const array_key = try self.parse_table_header();
                     if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
                     try self.expect_skip_line();
-                    const parts = try split_quote_aware(array_key, '.', self.alloc);
+                    const parts = try types.split_dotted_key(array_key, self.alloc);
                     defer self.alloc.free(parts);
                     if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
                     try self.parse_array_of_tables(root, parts);
                 } else {
                     const header = try self.parse_table_header();
                     try self.expect_skip_line();
-                    const parts = try split_quote_aware(header, '.', self.alloc);
+                    const parts = try types.split_dotted_key(header, self.alloc);
                     defer self.alloc.free(parts);
                     if (parts.len == 0) return ParseError.InvalidTableHeader;
                     const table = try root.create_table(parts, .header_t, self.alloc);
@@ -349,7 +349,7 @@ pub const Parser = struct {
         if ((self.current() orelse return) == '[') {
             if (try self.try_peek() == '[') return;
             const array_key = self.peek_until("]") orelse return ParseError.ErrorEOF;
-            const parts = try split_quote_aware(array_key[1..], '.', self.alloc);
+            const parts = try types.split_dotted_key(array_key[1..], self.alloc);
             defer self.alloc.free(parts);
             if (std.mem.eql(u8, key_parts[0], parts[0])) {
                 if (parts.len == 1 and key_parts.len == 1) return ParseError.KeyValueTypeOverride;
@@ -572,55 +572,4 @@ pub const Parser = struct {
 
 fn contains(str: []const u8, c: u8) bool {
     return std.mem.indexOfScalar(u8, str, c) != null;
-}
-
-fn handle_quote(quote: *?u8, c: u8) void {
-    if (quote.* == null) {
-        quote.* = c;
-    } else if (quote.* == c) {
-        quote.* = null;
-    }
-}
-
-fn last_indexof_qa(str: []const u8, char: u8) ?usize {
-    var quote: ?u8 = null;
-    for (0..str.len) |i| {
-        const c = str[str.len - 1 - i];
-        if (types.is_quote(c)) {
-            handle_quote(&quote, c);
-        } else if (c == char and quote == null) {
-            return str.len - 1 - i;
-        }
-    }
-    return null;
-}
-
-fn indexof_qa(str: []const u8, char: u8) ?usize {
-    var quote: ?u8 = null;
-    for (str, 0..) |c, i| {
-        if (types.is_quote(c)) {
-            handle_quote(&quote, c);
-        } else if (c == char and quote == null) {
-            return i;
-        }
-    }
-    return null;
-}
-
-fn split_quote_aware(
-    str: []const u8,
-    delim: u8,
-    allocator: std.mem.Allocator,
-) ![]const []const u8 {
-    var parts = std.ArrayList([]const u8).init(allocator);
-    var start: usize = 0;
-    while (indexof_qa(str[start..], delim)) |ind| {
-        const part = str[start .. start + ind];
-        try parts.append(std.mem.trim(u8, part, " \t"));
-        start += ind + 1;
-    }
-    if (start < str.len) {
-        try parts.append(std.mem.trim(u8, str[start..], " \t"));
-    }
-    return try parts.toOwnedSlice();
 }

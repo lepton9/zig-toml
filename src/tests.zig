@@ -11,7 +11,7 @@ test "toml" {
 test "parser" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_file("test/test.toml");
+    const toml_data = try p.parse_file("test/test_hard.toml");
     defer toml_data.deinit();
 }
 
@@ -415,4 +415,41 @@ test "array_of_tables" {
     try std.testing.expect(
         t.get("points").?.array.items[1].table.get("y").?.int == 8,
     );
+}
+
+test "encode" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    const parsed_file = try p.parse_file("test/test_easy.toml");
+    defer parsed_file.deinit();
+    const encoded_toml = try parsed_file.to_toml();
+    defer p.alloc.free(encoded_toml);
+    const parsed_encoded = try p.parse_string(encoded_toml);
+    defer parsed_encoded.deinit();
+    const t1 = parsed_file.get_table();
+    const t2 = parsed_encoded.get_table();
+
+    try std.testing.expect(
+        std.mem.eql(u8, t1.get("title").?.string, t2.get("title").?.string),
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t1.get("owner").?.get("name").?.string,
+        t2.get("owner").?.get("name").?.string,
+    ));
+    try std.testing.expect(
+        t1.get("database").?.get("ports").?.array.items.len ==
+            t2.get("database").?.get("ports").?.array.items.len,
+    );
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t1.get("database").?.get("data").?.array.items[0].array.items[0].string,
+        t2.get("database").?.get("data").?.array.items[0].array.items[0].string,
+    ));
+    try std.testing.expect(
+        t1.get("database").?.get("temp_targets").?.get("cpu").?.float ==
+            t2.get("database").?.get("temp_targets").?.get("cpu").?.float,
+    );
+    try std.testing.expect(t1.get("servers").?.table.table.count() ==
+        t2.get("servers").?.table.table.count());
 }

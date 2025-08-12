@@ -66,6 +66,12 @@ pub const Parser = struct {
         return std.mem.count(u8, self.content[0..self.index], "\n") + 1;
     }
 
+    fn reset(self: *Parser) void {
+        self.index = 0;
+        self.nested = false;
+        self.error_ctx = null;
+    }
+
     pub fn parse_file(self: *Parser, file_path: []const u8) !*toml.Toml {
         const file = try std.fs.cwd().openFile(file_path, .{});
         defer file.close();
@@ -77,7 +83,7 @@ pub const Parser = struct {
     }
 
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
-        self.error_ctx = null;
+        self.reset();
         self.content = content;
         return self.parse_root() catch |err| {
             self.make_error_context(err);

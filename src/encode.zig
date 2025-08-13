@@ -240,7 +240,7 @@ pub const TomlEncoder = struct {
         return try self.content.toOwnedSlice();
     }
 
-    pub fn to_toml(encoder: *TomlEncoder, value: *const toml.TomlValue, header: ?[]const u8) anyerror!void {
+    pub fn to_toml(encoder: *TomlEncoder, value: *toml.TomlValue, header: ?[]const u8) anyerror!void {
         switch (value.*) {
             .string => |v| try encoder.string_to_toml(&v),
             .int => |v| try encoder.int_to_toml(&v),
@@ -360,9 +360,23 @@ pub const TomlEncoder = struct {
         try encoder.content.append('}');
     }
 
-    fn table_to_toml(encoder: *TomlEncoder, value: *const toml.TomlTable, root_key: ?[]const u8) !void {
+    fn sort_table(toml_table: *toml.TomlTable) void {
+        const sort_ctx = struct {
+            values: []toml.TomlValue,
+            pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
+                return (ctx.values[a_index] != .table or (ctx.values[a_index].table.t_type != .header_t)) and
+                    (ctx.values[b_index] == .table and ctx.values[b_index].table.t_type == .header_t);
+            }
+        };
+        var table = &toml_table.table;
+        table.sort(sort_ctx{ .values = table.values() });
+    }
+
+    fn table_to_toml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
         var header = std.ArrayList(u8).init(encoder.allocator);
         defer header.deinit();
+        sort_table(value);
+
         var it = value.table.iterator();
         while (it.next()) |e| {
             const key = e.key_ptr.*;

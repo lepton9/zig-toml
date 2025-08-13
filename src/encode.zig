@@ -250,10 +250,11 @@ pub const TomlEncoder = struct {
             .time => |v| try encoder.time_to_toml(&v),
             .datetime => |v| try encoder.datetime_to_toml(&v),
             .array => |v| try encoder.array_to_toml(&v),
-            .table => |v| {
+            .table => |*v| {
                 switch (v.t_type) {
-                    .inline_t => try encoder.inline_table_to_toml(&v),
-                    else => try encoder.table_to_toml(&v, header),
+                    .inline_t => try encoder.inline_table_to_toml(v),
+                    .dotted_t => try encoder.dotted_table_to_toml(v, header),
+                    else => try encoder.table_to_toml(v, header),
                 }
             },
         }
@@ -341,6 +342,27 @@ pub const TomlEncoder = struct {
         if (regular_array) try encoder.content.append(']');
     }
 
+    fn dotted_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
+        var header = std.ArrayList(u8).init(encoder.allocator);
+        defer header.deinit();
+        if (root_key) |rk| try header.appendSlice(rk);
+        var it = value.table.iterator();
+        while (it.next()) |e| {
+            const key = e.key_ptr.*;
+            if (e.value_ptr.* != .table) {
+                try encoder.content.appendSlice(
+                    try std.fmt.bufPrint(&encoder.buffer, "{s}.{s} = ", .{ header.items, key }),
+                );
+                try encoder.to_toml(e.value_ptr, null);
+                try encoder.content.append('\n');
+            } else {
+                try header.append('.');
+                try header.appendSlice(key);
+                try encoder.to_toml(e.value_ptr, header.items);
+            }
+        }
+    }
+
     fn inline_table_to_toml(encoder: *TomlEncoder, value: *const toml.TomlTable) !void {
         try encoder.content.append('{');
         var it = value.table.iterator();
@@ -401,6 +423,10 @@ pub const TomlEncoder = struct {
                                     "[{s}]",
                                     .{header.items},
                                 );
+                            },
+                            // TODO:
+                            .dotted_t => {
+                                break :blk "";
                             },
                             else => {
                                 break :blk try std.fmt.bufPrint(

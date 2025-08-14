@@ -84,7 +84,7 @@ pub const TomlTable = struct {
     ) !void {
         const parts = try types.split_dotted_key(key, allocator);
         const key_value: KeyValue = .{ .key_parts = parts, .value = value };
-        try self.add_key_value(key_value, allocator);
+        try self.add_key_value_order(key_value, allocator);
     }
 
     pub fn create_table(
@@ -269,4 +269,104 @@ pub const TomlTable = struct {
         entry.value_ptr.* = value;
         entry.key_ptr.* = key;
     }
+
+    fn add_key_value_order(root: *TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
+        defer alloc.free(key_value.key_parts);
+        const key = try alloc.dupe(
+            u8,
+            try types.interpret_key(key_value.key_parts[key_value.key_parts.len - 1]),
+        );
+        var value = key_value.value;
+        errdefer alloc.free(key);
+        errdefer value.deinit(alloc);
+        var current = try root.get_or_create_table_order(
+            key_value.key_parts[0 .. key_value.key_parts.len - 1],
+            .dotted_t,
+            .implicit,
+            alloc,
+        );
+        if (current.table.get(key)) |existing| {
+            if (existing != .table)
+                return TableError.DuplicateKeyValuePair;
+            if (existing.table.t_type == .inline_t)
+                return TableError.ImmutableInlineTable;
+            return TableError.KeyValueRedefinition;
+        }
+        try put_keep_order(&current.table, key, value, alloc);
+    }
+
+    fn get_or_create_table_order(
+        root: *TomlTable,
+        key_parts: []const []const u8,
+        table_type: TableType,
+        origin_of_last: TableOrigin,
+        allocator: std.mem.Allocator,
+    ) !*TomlTable {
+        var current = root;
+        for (key_parts, 0..) |part, i| {
+            const key = try types.interpret_key(part);
+            const existing = current.table.getPtr(key);
+            if (existing) |exist| {
+                if (exist.* != .table) return TableError.InvalidTableNesting;
+                current = &exist.table;
+                if (i == key_parts.len - 1) {
+                    if (current.origin == .explicit) return TableError.TableRedefinition;
+                    current.origin = origin_of_last;
+                }
+                if (current.t_type == .header_t and table_type != .header_t)
+                    return TableError.TableRedefinition;
+                if (current.t_type == .inline_t) return TableError.ImmutableInlineTable;
+            } else {
+                const sub_table = toml.TomlValue{ .table = TomlTable.init(
+                    allocator,
+                    table_type,
+                    if (i == key_parts.len - 1) origin_of_last else .implicit,
+                ) };
+                const st_key = try allocator.dupe(u8, key);
+                try put_keep_order(&current.table, st_key, sub_table, allocator);
+                current = &current.table.getPtr(st_key).?.table;
+            }
+        }
+        return current;
+    }
 };
+
+fn put_keep_order(
+    table: *TomlHashMap,
+    key: []const u8,
+    value: toml.TomlValue,
+    alloc: std.mem.Allocator,
+) !void {
+    if (value == .table and (value.table.t_type == .header_t or value.table.t_type == .array_t)) {
+        try table.put(key, value);
+    } else {
+        var it = table.iterator();
+        var i: usize = 0;
+        while (it.next()) |*e| {
+            const val = e.value_ptr.*;
+            if (val == .table and (val.table.t_type == .header_t or val.table.t_type == .array_t)) {
+                break;
+            }
+            i += 1;
+        }
+        if (table.count() == 0 or i > table.count() - 1)
+            try table.put(key, value)
+        else
+            try insert_at(table, i, key, value, alloc);
+    }
+}
+
+fn insert_at(
+    table: *TomlHashMap,
+    index: usize,
+    key: []const u8,
+    value: toml.TomlValue,
+    alloc: std.mem.Allocator,
+) !void {
+    try table.unmanaged.entries.insert(alloc, index, .{
+        .hash = table.ctx.hash(key),
+        .key = key,
+        .value = value,
+    });
+    try table.reIndex();
+}

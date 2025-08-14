@@ -453,3 +453,41 @@ test "encode" {
     try std.testing.expect(t1.get("servers").?.table.table.count() ==
         t2.get("servers").?.table.table.count());
 }
+
+test "adding" {
+    const p = try parser.Parser.init(std.testing.allocator);
+    defer p.deinit();
+    var toml_t = try p.parse_string(
+        \\ value = {}
+        \\ [table]
+        \\ int = 123
+        \\ [table.subtable]
+        \\ tab = {a = 1, b = [1, 2]}
+        \\ [header]
+    );
+    defer toml_t.deinit();
+    var t = toml_t.get_table();
+
+    try t.getPtr("table").?.put("new", .{ .int = 0 }, p.alloc);
+    try t.put("added", .{ .bool = true }, p.alloc);
+
+    const str = try p.alloc.dupe(u8, "Adding a dotted table");
+    try t.put("add.table.str", .{ .string = str }, p.alloc);
+    try t.put("add.table.int", .{ .int = 1 }, p.alloc);
+
+    var array = toml.TomlArray.init(p.alloc);
+    try array.append(.{ .bool = true });
+    try array.append(.{ .float = 3.14 });
+    try array.append(.{ .table = toml.TomlTable.init_inline(p.alloc) });
+    try t.getPtr("header").?.put("array", .{ .array = array }, p.alloc);
+
+    try std.testing.expect(t.get("value").?.table.t_type == .inline_t);
+    try std.testing.expect(t.get("table").?.get("new").?.int == 0);
+    try std.testing.expect(t.get("added").?.bool == true);
+    try std.testing.expect(std.mem.eql(
+        u8,
+        t.get("add").?.get("table").?.get("str").?.string,
+        "Adding a dotted table",
+    ));
+    try std.testing.expect(t.get("header").?.get("array").?.array.items.len == 3);
+}

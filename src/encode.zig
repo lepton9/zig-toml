@@ -254,7 +254,6 @@ pub const TomlEncoder = struct {
                 switch (v.t_type) {
                     .inline_t => try encoder.inline_table_to_toml(v, header),
                     .dotted_t => try encoder.dotted_table_to_toml(v, header),
-                    .array_t => try encoder.array_table_to_toml(v, header),
                     else => try encoder.header_table_to_toml(v, header),
                 }
             },
@@ -358,27 +357,20 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(key);
     }
 
-    fn array_to_toml(encoder: *TomlEncoder, value: *const toml.TomlArray, header: ?[]const u8) !void {
-        var regular_array: bool = true;
-        if (value.items.len > 0 and
-            value.items[0] == .table and
-            value.items[0].table.t_type == .array_t)
-        {
-            regular_array = false;
-        }
+    fn array_to_toml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
         if (header) |h| {
             try encoder.content.appendSlice(
                 try std.fmt.bufPrint(&encoder.buffer, "{s} = ", .{h}),
             );
         }
-        if (regular_array) try encoder.content.append('[');
+        try encoder.content.append('[');
         for (value.items, 0..) |*e, i| {
             try encoder.to_toml(e, null);
             if (i < value.items.len - 1) {
-                if (regular_array) try encoder.content.appendSlice(", ");
+                try encoder.content.appendSlice(", ");
             }
         }
-        if (regular_array) try encoder.content.append(']');
+        try encoder.content.append(']');
     }
 
     fn dotted_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
@@ -424,13 +416,23 @@ pub const TomlEncoder = struct {
         try encoder.content.append('}');
     }
 
-    fn array_table_to_toml(_: *TomlEncoder, _: *toml.TomlTable, _: ?[]const u8) !void {}
+    fn array_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
+        for (value.items) |*table| {
+            try encoder.content.appendSlice(try std.fmt.bufPrint(
+                &encoder.buffer,
+                "[[{s}]]",
+                .{header.?},
+            ));
+            try encoder.content.append('\n');
+            try encoder.to_toml(table, null);
+        }
+    }
 
     fn sort_table(toml_table: *toml.TomlTable) void {
         const sort_ctx = struct {
             values: []toml.TomlValue,
             pub fn lessThan(ctx: @This(), a_index: usize, b_index: usize) bool {
-                return (ctx.values[a_index] != .table or (ctx.values[a_index].table.t_type != .header_t)) and
+                return (ctx.values[a_index] != .table or (ctx.values[a_index].table.t_type != .header_t and ctx.values[a_index].table.t_type != .array_t)) and
                     (ctx.values[b_index] == .table and ctx.values[b_index].table.t_type == .header_t);
             }
         };
@@ -450,20 +452,16 @@ pub const TomlEncoder = struct {
         var it = value.table.iterator();
         while (it.next()) |e| {
             const key = e.key_ptr.*;
-            const val = e.value_ptr.*;
-            switch (val) {
+            var val = e.value_ptr;
+            switch (val.*) {
                 .table => {
                     switch (val.table.t_type) {
                         .header_t => {
                             try header.appendSlice(key);
-                            if (val.table.table.count() == 1) {
-                                var iter = val.table.table.iterator();
-                                const next_val = iter.next().?.value_ptr.*;
-                                if (next_val == .table and next_val.table.t_type == .header_t) {
-                                    try encoder.to_toml(e.value_ptr, header.items);
-                                    header.clearAndFree();
-                                    continue;
-                                }
+                            if (val.table.origin == .implicit) {
+                                try encoder.to_toml(val, header.items);
+                                header.clearAndFree();
+                                continue;
                             }
                             try encoder.content.appendSlice(try std.fmt.bufPrint(
                                 &encoder.buffer,
@@ -471,17 +469,35 @@ pub const TomlEncoder = struct {
                                 .{header.items},
                             ));
                             try encoder.content.append('\n');
-                            try encoder.to_toml(e.value_ptr, header.items);
+                            try encoder.to_toml(val, header.items);
+                            header.shrinkAndFree(header.items.len - key.len);
+                        },
+                        .array_t => {
+                            try header.appendSlice(key);
+                            try encoder.to_toml(val, header.items);
                             header.shrinkAndFree(header.items.len - key.len);
                         },
                         else => {
-                            try encoder.to_toml(e.value_ptr, key);
+                            try encoder.to_toml(val, key);
                             try encoder.content.append('\n');
                         },
                     }
                 },
+                .array => {
+                    if (val.array.items.len > 0 and
+                        val.array.items[0] == .table and
+                        val.array.items[0].table.t_type == .array_t)
+                    {
+                        try header.appendSlice(key);
+                        try encoder.array_table_to_toml(&val.array, header.items);
+                        header.shrinkAndFree(header.items.len - key.len);
+                        continue;
+                    }
+                    try encoder.to_toml(val, key);
+                    try encoder.content.append('\n');
+                },
                 else => {
-                    try encoder.to_toml(e.value_ptr, key);
+                    try encoder.to_toml(val, key);
                     try encoder.content.append('\n');
                 },
             }

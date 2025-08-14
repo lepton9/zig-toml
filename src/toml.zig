@@ -31,8 +31,8 @@ pub const Toml = struct {
         self.alloc.destroy(self);
     }
 
-    pub fn get_table(self: *Toml) TomlTable {
-        return self.table.table;
+    pub fn get_table(self: *Toml) *TomlTable {
+        return &self.table.table;
     }
 
     pub fn to_json(self: *const Toml) ![]const u8 {

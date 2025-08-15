@@ -464,6 +464,9 @@ test "adding" {
         \\ [table.subtable]
         \\ tab = {a = 1, b = [1, 2]}
         \\ [header]
+        \\ [[table_array]]
+        \\ a = 1
+        \\ [[table_array]]
     );
     defer toml_t.deinit();
     var t = toml_t.get_table();
@@ -481,6 +484,20 @@ test "adding" {
     try array.append(.{ .table = toml.TomlTable.init_inline(p.alloc) });
     try t.getPtr("header").?.put("array", .{ .array = array }, p.alloc);
 
+    try t.put_table("new_table", p.alloc);
+    try t.getPtr("new_table").?.put("key", .{ .int = 0 }, p.alloc);
+
+    try t.put_table("new_table.sub_table.new", p.alloc);
+    try t.getPtr("new_table").?.get("sub_table").?.getPtr("new").?.put(
+        "bool",
+        .{ .bool = false },
+        p.alloc,
+    );
+
+    try t.put_table("new_header.table", p.alloc);
+    try t.getPtr("new_header").?.put("key1", .{ .int = 1 }, p.alloc);
+    try t.getPtr("new_header").?.getPtr("table").?.put("key2", .{ .int = 2 }, p.alloc);
+
     try std.testing.expect(t.get("value").?.table.t_type == .inline_t);
     try std.testing.expect(t.get("table").?.get("new").?.int == 0);
     try std.testing.expect(t.get("added").?.bool == true);
@@ -489,5 +506,14 @@ test "adding" {
         t.get("add").?.get("table").?.get("str").?.string,
         "Adding a dotted table",
     ));
+
     try std.testing.expect(t.get("header").?.get("array").?.array.items.len == 3);
+    try std.testing.expect(t.get("table_array").?.array.items.len == 2);
+
+    try std.testing.expect(t.get("new_table").?.get("key").?.int == 0);
+    try std.testing.expect(
+        t.get("new_table").?.get("sub_table").?.get("new").?.get("bool").?.bool == false,
+    );
+    try std.testing.expect(t.get("new_header").?.get("key1").?.int == 1);
+    try std.testing.expect(t.get("new_header").?.get("table").?.get("key2").?.int == 2);
 }

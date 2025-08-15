@@ -87,6 +87,16 @@ pub const TomlTable = struct {
         try self.add_key_value_order(key_value, allocator);
     }
 
+    pub fn put_table(
+        self: *TomlTable,
+        key: []const u8,
+        allocator: std.mem.Allocator,
+    ) !void {
+        const parts = try types.split_dotted_key(key, allocator);
+        defer allocator.free(parts);
+        _ = try self.create_table(parts, .header_t, allocator);
+    }
+
     pub fn create_table(
         root: *TomlTable,
         key_parts: []const []const u8,
@@ -293,6 +303,7 @@ pub const TomlTable = struct {
             return TableError.KeyValueRedefinition;
         }
         try put_keep_order(&current.table, key, value, alloc);
+        current.origin = .explicit;
     }
 
     fn get_or_create_table_order(
@@ -310,7 +321,8 @@ pub const TomlTable = struct {
                 if (exist.* != .table) return TableError.InvalidTableNesting;
                 current = &exist.table;
                 if (i == key_parts.len - 1) {
-                    if (current.origin == .explicit) return TableError.TableRedefinition;
+                    if (origin_of_last == .explicit and current.origin == .explicit)
+                        return TableError.TableRedefinition;
                     current.origin = origin_of_last;
                 }
                 if (current.t_type == .header_t and table_type != .header_t)

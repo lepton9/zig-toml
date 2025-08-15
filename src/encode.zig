@@ -378,6 +378,7 @@ pub const TomlEncoder = struct {
         defer header.deinit();
         if (root_key) |rk| try header.appendSlice(rk);
         var it = value.table.iterator();
+        var i: usize = 0;
         while (it.next()) |e| {
             const key = e.key_ptr.*;
             if (e.value_ptr.* != .table) {
@@ -386,7 +387,8 @@ pub const TomlEncoder = struct {
                 try var_key.appendSlice(key);
                 defer var_key.deinit();
                 try encoder.to_toml(e.value_ptr, var_key.items);
-                try encoder.content.append('\n');
+                if (i < value.table.count() - 1) try encoder.content.append('\n');
+                i += 1;
             } else {
                 try header.append('.');
                 try header.appendSlice(key);
@@ -420,10 +422,9 @@ pub const TomlEncoder = struct {
         for (value.items) |*table| {
             try encoder.content.appendSlice(try std.fmt.bufPrint(
                 &encoder.buffer,
-                "[[{s}]]",
+                "\n[[{s}]]\n",
                 .{header.?},
             ));
-            try encoder.content.append('\n');
             try encoder.to_toml(table, null);
         }
     }
@@ -452,10 +453,9 @@ pub const TomlEncoder = struct {
                             }
                             try encoder.content.appendSlice(try std.fmt.bufPrint(
                                 &encoder.buffer,
-                                "[{s}]",
+                                "\n[{s}]\n",
                                 .{header.items},
                             ));
-                            try encoder.content.append('\n');
                             try encoder.to_toml(val, header.items);
                             header.shrinkAndFree(header.items.len - key.len);
                         },

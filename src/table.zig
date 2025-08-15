@@ -286,9 +286,7 @@ pub const TomlTable = struct {
             u8,
             try types.interpret_key(key_value.key_parts[key_value.key_parts.len - 1]),
         );
-        var value = key_value.value;
         errdefer alloc.free(key);
-        errdefer value.deinit(alloc);
         var current = try root.get_or_create_table_order(
             key_value.key_parts[0 .. key_value.key_parts.len - 1],
             .dotted_t,
@@ -302,7 +300,7 @@ pub const TomlTable = struct {
                 return TableError.ImmutableInlineTable;
             return TableError.KeyValueRedefinition;
         }
-        try put_keep_order(&current.table, key, value, alloc);
+        try put_keep_order(&current.table, key, key_value.value, alloc);
         current.origin = .explicit;
     }
 

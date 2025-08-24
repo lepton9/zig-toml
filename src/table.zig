@@ -20,12 +20,12 @@ pub const TableError = error{
     KeyValueRedefinition,
 };
 
-const TableOrigin = enum {
+pub const TableOrigin = enum {
     implicit,
     explicit,
 };
 
-const TableType = enum {
+pub const TableType = enum {
     root,
     header_t,
     array_t,

@@ -37,7 +37,6 @@ pub const Parser = struct {
     alloc: std.mem.Allocator,
     content: []const u8 = undefined,
     index: usize = 0,
-    nested: bool = false,
     error_ctx: ?ErrorContext = null,
 
     pub fn init(allocator: std.mem.Allocator) !*Parser {
@@ -68,7 +67,6 @@ pub const Parser = struct {
 
     fn reset(self: *Parser) void {
         self.index = 0;
-        self.nested = false;
         self.error_ctx = null;
     }
 
@@ -102,8 +100,7 @@ pub const Parser = struct {
         try self.skip_while_char();
         while (self.current()) |c| {
             if (c == '[') {
-                if (self.nested) {
-                    self.nested = false;
+                if (root.t_type != .root) {
                     break;
                 } else if (try self.try_peek() == '[') {
                     self.advance();
@@ -121,7 +118,6 @@ pub const Parser = struct {
                     defer self.alloc.free(parts);
                     if (parts.len == 0) return ParseError.InvalidTableHeader;
                     const table = try root.create_table(parts, .header_t, self.alloc);
-                    self.nested = true;
                     try self.parse_table(table);
                 }
             } else {
@@ -335,7 +331,6 @@ pub const Parser = struct {
         root: *toml.TomlTable,
         key_parts: []const []const u8,
     ) anyerror!void {
-        self.nested = true;
         var array = try root.get_or_create_array(key_parts, self.alloc);
         var table_toml = toml.TomlValue{
             .table = toml.TomlTable.init(self.alloc, .array_t, .explicit),
@@ -365,7 +360,6 @@ pub const Parser = struct {
                         break :blk try last.get_or_create_table(parts[nested_n..], .array_t, .explicit, self.alloc);
                     }
                 };
-                self.nested = true;
                 try self.parse_table(table);
             }
         }

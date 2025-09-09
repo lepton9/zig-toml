@@ -217,11 +217,11 @@ pub const TomlTable = struct {
                 }
             } else {
                 const new_table = TomlTable.init(allocator, .array_t, .implicit);
-                var parts = std.ArrayList([]const u8).init(allocator);
-                try parts.append(key);
+                var parts = try std.ArrayList([]const u8).initCapacity(allocator, 5);
+                try parts.append(allocator, key);
                 try current.add_key_value(
                     .{
-                        .key_parts = try parts.toOwnedSlice(),
+                        .key_parts = try parts.toOwnedSlice(allocator),
                         .value = toml.TomlValue{ .table = new_table },
                     },
                     allocator,
@@ -238,13 +238,13 @@ pub const TomlTable = struct {
             }
             return &entry.value_ptr.array;
         } else {
-            const array = toml.TomlArray.init(allocator);
-            var parts = std.ArrayList([]const u8).init(allocator);
+            const array = try toml.TomlArray.initCapacity(allocator, 5);
+            var parts = try std.ArrayList([]const u8).initCapacity(allocator, 5);
             const k = try types.interpret_key(final_key);
-            try parts.append(k);
+            try parts.append(allocator, k);
             try current.add_key_value(
                 .{
-                    .key_parts = try parts.toOwnedSlice(),
+                    .key_parts = try parts.toOwnedSlice(allocator),
                     .value = toml.TomlValue{ .array = array },
                 },
                 allocator,

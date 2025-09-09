@@ -10,7 +10,7 @@ pub fn deinit_array(array: *TomlArray, allocator: std.mem.Allocator) void {
     for (array.items) |*item| {
         item.deinit(allocator);
     }
-    array.deinit();
+    array.deinit(allocator);
 }
 
 pub const Toml = struct {

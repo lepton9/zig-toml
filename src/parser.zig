@@ -155,18 +155,18 @@ pub const Parser = struct {
     }
 
     fn parse_key(self: *Parser) ![]const []const u8 {
-        var parts = std.ArrayList([]const u8).init(self.alloc);
-        errdefer parts.deinit();
+        var parts = try std.ArrayList([]const u8).initCapacity(self.alloc, 5);
+        errdefer parts.deinit(self.alloc);
         var start: ?usize = null;
         self.skip_whitespace();
         while (self.current()) |c| {
             switch (c) {
                 '=' => {
                     if (start) |i| {
-                        try parts.append(std.mem.trim(u8, self.content[i..self.index], " \t"));
+                        try parts.append(self.alloc, std.mem.trim(u8, self.content[i..self.index], " \t"));
                     }
                     self.advance();
-                    return try parts.toOwnedSlice();
+                    return try parts.toOwnedSlice(self.alloc);
                 },
                 '\"', '\'' => {
                     if (start) |_| return ParseError.InvalidKey;
@@ -178,7 +178,7 @@ pub const Parser = struct {
                 },
                 '.' => {
                     if (start) |i| {
-                        try parts.append(std.mem.trim(u8, self.content[i..self.index], " \t"));
+                        try parts.append(self.alloc, std.mem.trim(u8, self.content[i..self.index], " \t"));
                         start = null;
                     }
                     if (parts.items.len == 0) return ParseError.InvalidKey;
@@ -238,8 +238,8 @@ pub const Parser = struct {
     }
 
     fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
-        var output = std.ArrayList(u8).init(self.alloc);
-        errdefer output.deinit();
+        var output = try std.ArrayList(u8).initCapacity(self.alloc, 5);
+        errdefer output.deinit(self.alloc);
         for (0..delimiter.len) |_| self.advance();
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
@@ -252,7 +252,7 @@ pub const Parser = struct {
                         if (output.items.len > 0 and self.invalid_string_delim(delimiter))
                             return ParseError.InvalidStringDelimiter;
                         for (0..delimiter.len) |_| self.advance();
-                        return output.toOwnedSlice();
+                        return output.toOwnedSlice(self.alloc);
                     }
                 },
                 '\n', '\r' => if (!is_multiline) return ParseError.InvalidChar,
@@ -262,7 +262,7 @@ pub const Parser = struct {
                 },
                 else => {},
             }
-            try output.append(c);
+            try output.append(self.alloc, c);
             self.advance();
         }
         return ParseError.ErrorEOF;
@@ -274,13 +274,13 @@ pub const Parser = struct {
         switch (c) {
             'u' => try self.parse_unicode(4, output),
             'U' => try self.parse_unicode(8, output),
-            'b' => try output.append(0x08),
-            'f' => try output.append(0x0c),
-            't' => try output.append('\t'),
-            'n' => try output.append('\n'),
-            'r' => try output.append('\r'),
-            '\"' => try output.append('\"'),
-            '\\' => try output.append('\\'),
+            'b' => try output.append(self.alloc, 0x08),
+            'f' => try output.append(self.alloc, 0x0c),
+            't' => try output.append(self.alloc, '\t'),
+            'n' => try output.append(self.alloc, '\n'),
+            'r' => try output.append(self.alloc, '\r'),
+            '\"' => try output.append(self.alloc, '\"'),
+            '\\' => try output.append(self.alloc, '\\'),
             '\r', '\n', ' ', '\t' => {
                 if (multiline) {
                     try self.expect_skip_backslash(c == ' ');
@@ -302,11 +302,11 @@ pub const Parser = struct {
         for (0..size) |_| self.advance();
         var buf: [4]u8 = undefined;
         const len = try std.unicode.utf8Encode(cp, buf[0..]);
-        try output.appendSlice(buf[0..len]);
+        try output.appendSlice(self.alloc, buf[0..len]);
     }
 
     fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
-        var array = std.ArrayList(toml.TomlValue).init(self.alloc);
+        var array = try std.ArrayList(toml.TomlValue).initCapacity(self.alloc, 5);
         errdefer toml.deinit_array(&array, self.alloc);
         self.advance();
         try self.skip_while_char();
@@ -316,7 +316,7 @@ pub const Parser = struct {
                 return array;
             }
             const value = try self.parse_value();
-            try array.append(value);
+            try array.append(self.alloc, value);
             try self.skip_while_char();
             if (self.current() == ',') {
                 self.advance();
@@ -339,7 +339,7 @@ pub const Parser = struct {
             errdefer table_toml.deinit(self.alloc);
             try self.parse_table(&table_toml.table);
         }
-        try array.append(table_toml);
+        try array.append(self.alloc, table_toml);
 
         if ((self.current() orelse return) == '[') {
             if (try self.try_peek() == '[') return;

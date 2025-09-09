@@ -193,17 +193,17 @@ fn split_quote_aware(
     delim: u8,
     allocator: std.mem.Allocator,
 ) ![]const []const u8 {
-    var parts = std.ArrayList([]const u8).init(allocator);
+    var parts = try std.ArrayList([]const u8).initCapacity(allocator, 5);
     var start: usize = 0;
     while (indexof_qa(str[start..], delim)) |ind| {
         const part = str[start .. start + ind];
-        try parts.append(std.mem.trim(u8, part, " \t"));
+        try parts.append(allocator, std.mem.trim(u8, part, " \t"));
         start += ind + 1;
     }
     if (start < str.len) {
-        try parts.append(std.mem.trim(u8, str[start..], " \t"));
+        try parts.append(allocator, std.mem.trim(u8, str[start..], " \t"));
     }
-    return try parts.toOwnedSlice();
+    return try parts.toOwnedSlice(allocator);
 }
 
 pub fn split_dotted_key(

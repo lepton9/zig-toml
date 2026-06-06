@@ -1,8 +1,8 @@
 .{
     .name = .toml,
-    .version = "0.3.2",
+    .version = "0.3.3",
     .fingerprint = 0x12c55c5392313760,
-    .minimum_zig_version = "0.15.1",
+    .minimum_zig_version = "0.16.0",
     .dependencies = .{},
     .paths = .{
         "build.zig",

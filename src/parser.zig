@@ -39,9 +39,9 @@ pub const Parser = struct {
     index: usize = 0,
     error_ctx: ?ErrorContext = null,
 
-    pub fn init(allocator: std.mem.Allocator) !*Parser {
-        const parser = try allocator.create(Parser);
-        parser.* = .{ .alloc = allocator };
+    pub fn init(gpa: std.mem.Allocator) !*Parser {
+        const parser = try gpa.create(Parser);
+        parser.* = .{ .alloc = gpa };
         return parser;
     }
 
@@ -70,16 +70,15 @@ pub const Parser = struct {
         self.error_ctx = null;
     }
 
-    pub fn parse_file(self: *Parser, file_path: []const u8) !*toml.Toml {
-        const file = try std.fs.cwd().openFile(file_path, .{});
-        defer file.close();
-        const file_size = try file.getEndPos();
-        const buffer = try self.alloc.alloc(u8, file_size);
-        _ = try file.readAll(buffer);
+    /// Parses a TOML file from the given file path.
+    pub fn parse_file(self: *Parser, io: std.Io, file_path: []const u8) !*toml.Toml {
+        const cwd = std.Io.Dir.cwd();
+        const buffer = try cwd.readFileAlloc(io, file_path, self.alloc, .unlimited);
         defer self.alloc.free(buffer);
-        return try self.parse_string(buffer);
+        return self.parse_string(buffer);
     }
 
+    /// Parses the given content into TOML.
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
         self.reset();
         self.content = content;
@@ -333,7 +332,7 @@ pub const Parser = struct {
     ) anyerror!void {
         var array = try root.get_or_create_array(key_parts, self.alloc);
         var table_toml = toml.TomlValue{
-            .table = toml.TomlTable.init(self.alloc, .array_t, .explicit),
+            .table = toml.TomlTable.init(.array_t, .explicit),
         };
         {
             errdefer table_toml.deinit(self.alloc);
@@ -366,7 +365,7 @@ pub const Parser = struct {
     }
 
     fn parse_inline_table(self: *Parser) !toml.TomlTable {
-        var table = toml.TomlTable.init_inline(self.alloc);
+        var table = toml.TomlTable.init_inline();
         errdefer table.deinit(self.alloc);
         var comma = false;
         self.advance();

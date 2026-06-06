@@ -3,21 +3,6 @@ const parser = @import("parser.zig");
 const types = @import("types.zig");
 const std = @import("std");
 
-pub fn main() !void {
-    const p = try parser.Parser.init(std.heap.page_allocator);
-    defer p.deinit();
-    const in = std.io.getStdIn();
-    var br = std.io.bufferedReader(in.reader());
-    var r = br.reader();
-    var buf: [4096]u8 = undefined;
-    const bytes_read = try r.readAll(&buf);
-    const toml_data = try p.parse_string(buf[0..bytes_read]);
-    defer toml_data.deinit();
-    const json = try toml_data.to_json_with_types();
-    defer toml_data.alloc.free(json);
-    try std.io.getStdOut().writer().print("{s}\n", .{json});
-}
-
 test "toml" {
     const t = try toml.Toml.init(std.testing.allocator);
     defer t.deinit();
@@ -26,7 +11,8 @@ test "toml" {
 test "parser" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_file("test/test_hard.toml");
+    const io = std.testing.io;
+    const toml_data = try p.parse_file(io, "test/test_hard.toml");
     defer toml_data.deinit();
 }
 
@@ -435,7 +421,8 @@ test "array_of_tables" {
 test "encode" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const parsed_file = try p.parse_file("test/test_easy.toml");
+    const io = std.testing.io;
+    const parsed_file = try p.parse_file(io, "test/test_easy.toml");
     defer parsed_file.deinit();
     const encoded_toml = try parsed_file.to_toml();
     defer p.alloc.free(encoded_toml);
@@ -496,7 +483,7 @@ test "adding" {
     var array = try toml.TomlArray.initCapacity(p.alloc, 5);
     try array.append(p.alloc, .{ .bool = true });
     try array.append(p.alloc, .{ .float = 3.14 });
-    try array.append(p.alloc, .{ .table = toml.TomlTable.init_inline(p.alloc) });
+    try array.append(p.alloc, .{ .table = toml.TomlTable.init_inline() });
     try t.getPtr("header").?.put("array", .{ .array = array }, p.alloc);
 
     try t.put_table("new_table", p.alloc);

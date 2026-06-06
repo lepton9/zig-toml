@@ -20,7 +20,7 @@ pub const Toml = struct {
     pub fn init(allocator: std.mem.Allocator) !*Toml {
         const t = try allocator.create(Toml);
         t.* = .{
-            .table = .{ .table = TomlTable.init(allocator, .root, .explicit) },
+            .table = .{ .table = TomlTable.init(.root, .explicit) },
             .alloc = allocator,
         };
         return t;

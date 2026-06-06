@@ -20,12 +20,16 @@ exe.root_module.addImport("toml", toml_mod);
 
 ```zig
 const toml = @import("toml");
+const std = @import("std");
 
-pub fn main() !void {
-    const p = try toml.Parser.init(std.heap.page_allocator);
+pub fn main(init: std.process.Init) !void {
+    const gpa = init.gpa;
+    const io = init.io;
+
+    const p = try toml.Parser.init(gpa);
     defer p.deinit();
-    const toml_table = try p.parse_file("example.toml");
+
+    const toml_table = try p.parse_file(io, "example.toml");
     defer toml_table.deinit();
 }
 ```
-

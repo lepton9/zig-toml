@@ -8,10 +8,12 @@ pub const JsonEncoder = struct {
     buffer: [256]u8,
     allocator: std.mem.Allocator,
 
+    const default_indent = 4;
+
     pub fn init(allocator: std.mem.Allocator, type_info: bool) !*JsonEncoder {
         const json = try allocator.create(JsonEncoder);
         json.* = .{
-            .content = std.ArrayList(u8).init(allocator),
+            .content = .empty,
             .type_info = type_info,
             .buffer = undefined,
             .allocator = allocator,
@@ -20,13 +22,13 @@ pub const JsonEncoder = struct {
     }
 
     pub fn deinit(self: *JsonEncoder) void {
-        self.content.deinit();
+        self.content.deinit(self.allocator);
         self.allocator.destroy(self);
     }
 
     pub fn to_owned(self: *JsonEncoder) ![]const u8 {
         defer self.allocator.destroy(self);
-        return try self.content.toOwnedSlice();
+        return try self.content.toOwnedSlice(self.allocator);
     }
 
     pub fn to_json(json: *JsonEncoder, value: *const toml.TomlValue, indent: *usize) anyerror!void {
@@ -175,26 +177,26 @@ pub const JsonEncoder = struct {
     }
 
     fn array_to_json(json: *JsonEncoder, value: *const toml.TomlArray, indent: *usize) !void {
-        try json.content.append('[');
+        try json.content.append(json.allocator, '[');
         for (value.items, 0..) |*e, i| {
             try json.to_json(e, indent);
             if (i < value.items.len - 1) {
                 try json.content.appendSlice(json.allocator, ", ");
             }
         }
-        try json.content.append(']');
+        try json.content.append(json.allocator, ']');
     }
 
     fn table_to_json(json: *JsonEncoder, value: *const toml.TomlTable, indent: *usize) !void {
-        try json.content.append('{');
+        try json.content.append(json.allocator, '{');
         var it = value.table.iterator();
         const n = value.table.count();
         var i: u32 = 0;
         while (it.next()) |e| {
             var key = e.key_ptr.*;
-            try json.content.append('\n');
-            indent.* += 2;
-            for (0..indent.*) |_| try json.content.append(' ');
+            try json.content.append(json.allocator, '\n');
+            indent.* += JsonEncoder.default_indent;
+            for (0..indent.*) |_| try json.content.append(json.allocator, ' ');
             if (json.type_info and types.is_quoted(key) and key.len > 2) {
                 key = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
             }
@@ -203,16 +205,16 @@ pub const JsonEncoder = struct {
                 try std.fmt.bufPrint(&json.buffer, "\"{s}\": ", .{key}),
             );
             try json.to_json(e.value_ptr, indent);
-            indent.* -= 2;
+            indent.* -= JsonEncoder.default_indent;
             if (i < n - 1) {
                 i += 1;
-                try json.content.append(',');
+                try json.content.append(json.allocator, ',');
             } else {
-                try json.content.append('\n');
-                for (0..indent.*) |_| try json.content.append(' ');
+                try json.content.append(json.allocator, '\n');
+                for (0..indent.*) |_| try json.content.append(json.allocator, ' ');
             }
         }
-        try json.content.append('}');
+        try json.content.append(json.allocator, '}');
     }
 };
 

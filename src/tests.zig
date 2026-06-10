@@ -30,7 +30,6 @@ test "keys" {
         \\ 'key2' = "value"
         \\ 'quoted "value"' = "value"
         \\ "" = "blank"
-        \\ '' = 'blank'
         \\ name = "Orange"
         \\ physical.color = "orange"
         \\ physical.shape = "round"

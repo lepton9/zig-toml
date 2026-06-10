@@ -236,15 +236,22 @@ const TestRunner = struct {
 
         if (self.cfg.only_tests.len != 0) {
             for (self.cfg.only_tests) |test_path| {
-                const expect_ok = expectOkFromPath(test_path) orelse {
+                const path = blk: {
+                    const path = if (std.mem.startsWith(u8, test_path, self.cfg.tests_root))
+                        test_path[self.cfg.tests_root.len..]
+                    else
+                        test_path;
+                    break :blk std.mem.trimStart(u8, path, "/");
+                };
+                const expect_ok = expectOkFromPath(path) orelse {
                     std.debug.print(
                         "error: the test must start with 'valid/' or 'invalid/': {s}\n",
-                        .{test_path},
+                        .{path},
                     );
                     return error.InvalidArgs;
                 };
                 try self.tests.append(self.gpa, .{
-                    .path = try self.gpa.dupe(u8, test_path),
+                    .path = try self.gpa.dupe(u8, path),
                     .expect_ok = expect_ok,
                 });
             }
@@ -305,7 +312,14 @@ const TestRunner = struct {
             const parsed = self.parser.parse_string(content);
             if (item.expect_ok) {
                 const expected_json = self.loadExpectedJson(item.path) orelse {
-                    std.debug.print("Expected a JSON file for '{s}'\n", .{item.path});
+                    stats.failures += 1;
+                    if (!showFailure(self.cfg, stats.failures)) continue;
+                    printFailureDetails(self.cfg, full_path, .{
+                        .expect_ok = true,
+                        .parse_ok = true,
+                        .input = content,
+                        .reason = "missing expected json",
+                    });
                     continue;
                 };
                 defer self.gpa.free(expected_json);

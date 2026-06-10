@@ -32,15 +32,12 @@ pub const DateTime = struct {
 };
 
 pub fn interpret_key(str: []const u8) ![]const u8 {
-    var key = std.mem.trim(u8, str, " \t");
+    const key = std.mem.trim(u8, str, " \t");
     if (is_quoted(key)) {
-        const unquoted = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
-        const can_remove = unquoted.len > 0 and all(unquoted, valid_key_char);
-        return if (can_remove) unquoted else key;
-    } else {
-        if (key.len > 0 and all(key, valid_key_char)) return key;
-        return TypeError.InvalidKey;
+        return key[1 .. key.len - 1];
     }
+    if (key.len > 0 and all(key, valid_key_char)) return key;
+    return TypeError.InvalidKey;
 }
 
 pub fn interpret_int(str: []const u8) ?i64 {

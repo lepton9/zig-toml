@@ -70,14 +70,14 @@ pub const TomlValue = union(enum) {
 
     pub fn get(self: *const TomlValue, key: []const u8) ?TomlValue {
         if (self.* == TomlValue.table) {
-            return self.table.get(types.interpret_key(key) catch return null);
+            return self.table.get(key);
         }
         return null;
     }
 
     pub fn getPtr(self: *const TomlValue, key: []const u8) ?*TomlValue {
         if (self.* == TomlValue.table) {
-            return self.table.getPtr(types.interpret_key(key) catch return null);
+            return self.table.getPtr(key);
         }
         return null;
     }
@@ -87,7 +87,7 @@ pub const TomlValue = union(enum) {
         key: []const u8,
     ) ?TomlHashMap.Entry {
         if (self.* == TomlValue.table) {
-            return self.table.getEntry(types.interpret_key(key) catch return null);
+            return self.table.getEntry(key);
         }
         return null;
     }

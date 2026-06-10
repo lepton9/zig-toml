@@ -2,6 +2,125 @@ const std = @import("std");
 const types = @import("types.zig");
 const toml = @import("toml.zig");
 
+/// Encode TOML values to `std.json.Value`.
+pub fn tomlValueToJsonValue(
+    allocator: std.mem.Allocator,
+    value: *const toml.TomlValue,
+) std.mem.Allocator.Error!std.json.Value {
+    return switch (value.*) {
+        .string => |s| std.json.Value{ .string = s },
+        .int => |i| std.json.Value{ .integer = i },
+        .float => |f| std.json.Value{ .float = f },
+        .bool => |b| std.json.Value{ .bool = b },
+        .date => |d| std.json.Value{ .string = try formatDate(allocator, d) },
+        .time => |t| std.json.Value{ .string = try formatTime(allocator, t) },
+        .datetime => |dt| std.json.Value{ .string = try formatDateTime(allocator, dt) },
+        .array => |*a| blk: {
+            var arr = try std.json.Array.initCapacity(allocator, a.items.len);
+            for (a.items) |*item| {
+                arr.appendAssumeCapacity(try tomlValueToJsonValue(allocator, item));
+            }
+            break :blk std.json.Value{ .array = arr };
+        },
+        .table => |*t| try tomlTableToJsonValue(allocator, t),
+    };
+}
+
+pub fn tomlTableToJsonValue(
+    allocator: std.mem.Allocator,
+    table: *const toml.TomlTable,
+) std.mem.Allocator.Error!std.json.Value {
+    var obj: std.json.ObjectMap = .empty;
+    errdefer obj.deinit(allocator);
+
+    var it = table.table.iterator();
+    while (it.next()) |entry| {
+        const v = try tomlValueToJsonValue(allocator, entry.value_ptr);
+        const gop = try obj.getOrPut(allocator, entry.key_ptr.*);
+        gop.value_ptr.* = v;
+    }
+
+    return std.json.Value{ .object = obj };
+}
+
+/// Format Date to a string.
+fn formatDate(allocator: std.mem.Allocator, d: types.Date) ![]const u8 {
+    return try std.fmt.allocPrint(
+        allocator,
+        "{:0>4}-{:0>2}-{:0>2}",
+        .{ d.year, d.month, d.day },
+    );
+}
+
+/// Format Time to a string.
+fn formatTime(allocator: std.mem.Allocator, t: types.Time) ![]const u8 {
+    if (t.nanosecond == 0) {
+        return try std.fmt.allocPrint(
+            allocator,
+            "{:0>2}:{:0>2}:{:0>2}",
+            .{ t.hour, t.minute, t.second },
+        );
+    }
+
+    var ns_buf: [16]u8 = undefined;
+    const ns = std.fmt.bufPrint(&ns_buf, "{:0>9}", .{t.nanosecond}) catch unreachable;
+    var end: usize = ns.len;
+    while (end > 0 and ns[end - 1] == '0') end -= 1;
+
+    return try std.fmt.allocPrint(
+        allocator,
+        "{:0>2}:{:0>2}:{:0>2}.{s}",
+        .{ t.hour, t.minute, t.second, ns[0..end] },
+    );
+}
+
+/// Format DateTime to a string.
+fn formatDateTime(allocator: std.mem.Allocator, dt: types.DateTime) ![]const u8 {
+    const d = dt.date;
+    const t = dt.time;
+
+    // Format fractional seconds without allocating an intermediate string.
+    var frac_buf: [16]u8 = undefined;
+    var frac: []const u8 = "";
+    if (t.nanosecond != 0) {
+        var ns_buf: [16]u8 = undefined;
+        const ns_9 = std.fmt.bufPrint(&ns_buf, "{:0>9}", .{t.nanosecond}) catch unreachable;
+        var end: usize = ns_9.len;
+        while (end > 0 and ns_9[end - 1] == '0') end -= 1;
+        frac_buf[0] = '.';
+        @memcpy(frac_buf[1 .. 1 + end], ns_9[0..end]);
+        frac = frac_buf[0 .. 1 + end];
+    }
+
+    if (dt.offset_minutes == null) {
+        return try std.fmt.allocPrint(
+            allocator,
+            "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{s}",
+            .{ d.year, d.month, d.day, t.hour, t.minute, t.second, frac },
+        );
+    }
+
+    const offset = dt.offset_minutes.?;
+    if (offset == 0) {
+        return try std.fmt.allocPrint(
+            allocator,
+            "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{s}Z",
+            .{ d.year, d.month, d.day, t.hour, t.minute, t.second, frac },
+        );
+    }
+
+    const abs_off: i16 = @intCast(@abs(offset));
+    const hours: u5 = @intCast(@divTrunc(abs_off, 60));
+    const minutes: u6 = @intCast(@mod(abs_off, 60));
+    const sign: u8 = if (offset >= 0) '+' else '-';
+
+    return try std.fmt.allocPrint(
+        allocator,
+        "{:0>4}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}{s}{c}{:0>2}:{:0>2}",
+        .{ d.year, d.month, d.day, t.hour, t.minute, t.second, frac, sign, hours, minutes },
+    );
+}
+
 pub const JsonEncoder = struct {
     content: std.ArrayList(u8),
     type_info: bool,

@@ -1,5 +1,7 @@
 const std = @import("std");
 const parser_mod = @import("parser.zig");
+const encode = @import("encode.zig");
+const types = @import("types.zig");
 
 const Parser = parser_mod.Parser;
 
@@ -183,51 +185,151 @@ const TestRunner = struct {
         return self.cwd.readFileAlloc(self.io, json_full, self.gpa, .unlimited) catch null;
     }
 
-    /// Compare two JSON strings for semantic equivalence.
-    fn compareJson(self: *TestRunner, a: []const u8, b: []const u8) !bool {
-        if (std.mem.eql(u8, a, b)) return true;
-        const arena = self.arena.allocator();
-        defer _ = self.arena.reset(.retain_capacity);
+    const TypedExpected = struct { type_name: []const u8, value: []const u8 };
 
-        const a_json = try std.json.parseFromSliceLeaky(std.json.Value, arena, a, .{});
-        const b_json = try std.json.parseFromSliceLeaky(std.json.Value, arena, b, .{});
-        return jsonValueEql(a_json, b_json);
+    /// Tries to unwrap test JSON objects like: {"type": "...", "value": "..."}.
+    fn unwrapTypedExpected(
+        expected: *const std.json.Value,
+    ) ?TypedExpected {
+        if (expected.* != .object) return null;
+        if (expected.object.count() != 2) return null;
+
+        const t_v = expected.object.get("type") orelse return null;
+        const v_v = expected.object.get("value") orelse return null;
+        if (t_v != .string) return null;
+        if (v_v != .string) return null;
+
+        return .{ .type_name = t_v.string, .value = v_v.string };
     }
 
-    /// Check if the JSON values are semantically equavalent.
-    fn jsonValueEql(a: std.json.Value, b: std.json.Value) bool {
-        const Tag = std.meta.Tag(std.json.Value);
-        const at: Tag = std.meta.activeTag(a);
-        const bt: Tag = std.meta.activeTag(b);
-        if (at != bt) return false;
+    /// Compare two JSON values for semantic equivalence.
+    fn jsonValueEquality(actual: *const std.json.Value, expected: *const std.json.Value) bool {
+        switch (actual.*) {
+            .string => |s| return expected.* == .string and std.mem.eql(u8, s, expected.string),
+            .integer => |i| return expected.* == .integer and i == expected.integer,
+            .bool => |b| return expected.* == .bool and b == expected.bool,
+            .float => |f| return switch (expected.*) {
+                .float => |f2| f == f2,
+                .integer => |i| f == @as(f64, @floatFromInt(i)),
+                else => false,
+            },
+            else => return false,
+        }
+    }
 
-        return switch (a) {
-            .null => true,
-            .bool => |av| av == b.bool,
-            .integer => |av| av == b.integer,
-            .float => |av| av == b.float,
-            .number_string => |av| std.mem.eql(u8, av, b.number_string),
-            .string => |av| std.mem.eql(u8, av, b.string),
-            .array => |av| blk: {
-                const bv = b.array;
-                if (av.items.len != bv.items.len) break :blk false;
-                for (av.items, bv.items) |ai, bi| {
-                    if (!jsonValueEql(ai, bi)) break :blk false;
+    /// Compare JSON against expected toml-test JSON.
+    fn jsonEquality(
+        self: *TestRunner,
+        allocator: std.mem.Allocator,
+        actual: *const std.json.Value,
+        expected: *const std.json.Value,
+    ) anyerror!bool {
+        if (unwrapTypedExpected(expected)) |tw| {
+            return self.jsonEqualityTyped(allocator, actual, tw);
+        }
+        return self.jsonEqualityContainer(allocator, actual, expected);
+    }
+
+    /// Compare typed JSON values.
+    fn jsonEqualityTyped(
+        _: *TestRunner,
+        allocator: std.mem.Allocator,
+        actual: *const std.json.Value,
+        expected: TypedExpected,
+    ) anyerror!bool {
+        const eql = std.mem.eql;
+
+        if (eql(u8, expected.type_name, "string")) {
+            if (actual.* != .string) return false;
+            return eql(u8, actual.string, expected.value);
+        }
+
+        if (eql(u8, expected.type_name, "float")) {
+            if (actual.* != .float) return false;
+
+            if (eql(u8, expected.value, "inf") or eql(u8, expected.value, "+inf"))
+                return std.math.inf(f64) == actual.float;
+            if (eql(u8, expected.value, "-inf"))
+                return -std.math.inf(f64) == actual.float;
+            if (eql(u8, expected.value, "nan") or
+                eql(u8, expected.value, "+nan") or
+                eql(u8, expected.value, "-nan"))
+                return std.math.isNan(actual.float);
+        }
+
+        if (eql(u8, expected.type_name, "datetime") or
+            eql(u8, expected.type_name, "datetime-local") or
+            eql(u8, expected.type_name, "date-local") or
+            eql(u8, expected.type_name, "time-local"))
+        {
+            if (actual.* != .string) return false;
+            if (eql(u8, expected.type_name, "date-local")) {
+                const a = try types.interpret_date(actual.string) orelse return false;
+                const e = try types.interpret_date(expected.value) orelse return false;
+                return a.year == e.year and a.month == e.month and a.day == e.day;
+            }
+            if (eql(u8, expected.type_name, "time-local")) {
+                const a = try types.interpret_time(actual.string) orelse return false;
+                const e = try types.interpret_time(expected.value) orelse return false;
+                return a.eql(e);
+            }
+            const a = try types.interpret_datetime(actual.string) orelse return false;
+            const e = try types.interpret_datetime(expected.value) orelse return false;
+            return a.eql(e);
+        }
+
+        // Handle bool/integer
+        const parsed = std.json.parseFromSliceLeaky(
+            std.json.Value,
+            allocator,
+            expected.value,
+            .{},
+        ) catch return false;
+        return jsonValueEquality(actual, &parsed);
+    }
+
+    /// Compare JSON containers like arrays and objects.
+    fn jsonEqualityContainer(
+        self: *TestRunner,
+        allocator: std.mem.Allocator,
+        actual: *const std.json.Value,
+        expected: *const std.json.Value,
+    ) anyerror!bool {
+        switch (actual.*) {
+            .array => {
+                if (expected.* != .array) return false;
+                const arr_actual = actual.array.items;
+                const arr_expected = expected.array.items;
+                if (arr_actual.len != arr_expected.len) return false;
+                for (arr_actual, 0..) |a_item, i| {
+                    const e_item = arr_expected[i];
+                    if (!try self.jsonEquality(allocator, &a_item, &e_item)) return false;
                 }
-                break :blk true;
+                return true;
             },
-            .object => |av| blk: {
-                const bv = b.object;
-                if (av.count() != bv.count()) break :blk false;
-                var it = av.iterator();
-                while (it.next()) |entry| {
-                    const key = entry.key_ptr.*;
-                    const b_val_ptr = bv.getPtr(key) orelse break :blk false;
-                    if (!jsonValueEql(entry.value_ptr.*, b_val_ptr.*)) break :blk false;
+            .object => {
+                if (expected.* != .object) return false;
+                if (actual.object.count() != expected.object.count()) return false;
+                var it = actual.object.iterator();
+                while (it.next()) |entry_a| {
+                    const e_val = expected.object.get(entry_a.key_ptr.*) orelse
+                        return false;
+                    if (!try self.jsonEquality(allocator, entry_a.value_ptr, &e_val))
+                        return false;
                 }
-                break :blk true;
+                return true;
             },
-        };
+            else => return false,
+        }
+    }
+
+    fn stringifyJsonValue(self: *TestRunner, value: std.json.Value) ![]u8 {
+        var out: std.Io.Writer.Allocating = .init(self.gpa);
+        defer out.deinit();
+
+        try std.json.Stringify.value(value, .{ .whitespace = .indent_4 }, &out.writer);
+        const owned = try self.gpa.dupe(u8, out.written());
+        return owned;
     }
 
     /// Collect all the tests to run.
@@ -345,17 +447,26 @@ const TestRunner = struct {
                 };
                 defer toml.deinit();
 
-                const actual_json = try toml.to_json_with_types();
-                defer self.gpa.free(actual_json);
+                const arena = self.arena.allocator();
+                defer _ = self.arena.reset(.retain_capacity);
 
-                // Compare the contents
+                const expected_val = try std.json.parseFromSliceLeaky(std.json.Value, arena, expected_json, .{});
+                const actual_val = try encode.tomlTableToJsonValue(arena, toml.get_table());
+
                 const eql: bool, const err: ?anyerror = blk: {
-                    const eql = self.compareJson(actual_json, expected_json) catch |err|
+                    const eql = self.jsonEquality(arena, &actual_val, &expected_val) catch |err|
                         break :blk .{ false, err };
                     break :blk .{ eql, null };
                 };
                 if (eql) continue;
+
                 stats.failures += 1;
+                const actual_json: ?[]const u8 = if (self.cfg.show)
+                    (self.stringifyJsonValue(actual_val) catch null)
+                else
+                    null;
+                defer if (actual_json) |s| self.gpa.free(s);
+
                 printFailureDetails(self.cfg, full_path, .{
                     .expect_ok = true,
                     .parse_ok = true,
@@ -372,10 +483,12 @@ const TestRunner = struct {
                 stats.failures += 1;
                 if (!showFailure(self.cfg, stats.failures)) continue;
 
-                const actual_json: ?[]const u8 = if (self.cfg.show)
-                    toml.to_json_with_types() catch null
-                else
-                    null;
+                const actual_json: ?[]const u8 = if (self.cfg.show) blk: {
+                    const arena = self.arena.allocator();
+                    defer _ = self.arena.reset(.retain_capacity);
+                    const actual_val = encode.tomlTableToJsonValue(arena, toml.get_table()) catch break :blk null;
+                    break :blk self.stringifyJsonValue(actual_val) catch null;
+                } else null;
                 defer if (actual_json) |s| self.gpa.free(s);
 
                 printFailureDetails(self.cfg, full_path, .{

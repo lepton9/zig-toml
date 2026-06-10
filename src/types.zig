@@ -2,6 +2,8 @@ const std = @import("std");
 
 pub const TypeError = error{
     InvalidKey,
+    InvalidEscape,
+    InvalidUnicode,
     InvalidYear,
     InvalidMonth,
     InvalidDay,
@@ -16,6 +18,12 @@ pub const Date = struct {
     year: u16,
     month: u4,
     day: u5,
+
+    pub fn eql(self: Date, v: Date) bool {
+        return self.year == v.year and
+            self.month == v.month and
+            self.day == v.day;
+    }
 };
 
 pub const Time = struct {
@@ -23,12 +31,24 @@ pub const Time = struct {
     minute: u6,
     second: u6,
     nanosecond: u30 = 0,
+
+    pub fn eql(self: Time, v: Time) bool {
+        return self.hour == v.hour and
+            self.minute == v.minute and
+            self.second == v.second and
+            self.nanosecond == v.nanosecond;
+    }
 };
 
 pub const DateTime = struct {
     date: Date,
     time: Time,
     offset_minutes: ?i16 = 0,
+
+    pub fn eql(self: DateTime, v: DateTime) bool {
+        return self.date.eql(v.date) and self.time.eql(v.time) and
+            self.offset_minutes == v.offset_minutes;
+    }
 };
 
 pub fn interpret_key(str: []const u8) ![]const u8 {
@@ -38,6 +58,70 @@ pub fn interpret_key(str: []const u8) ![]const u8 {
     }
     if (key.len > 0 and all(key, valid_key_char)) return key;
     return TypeError.InvalidKey;
+}
+
+/// Interpret and allocate the key.
+///
+/// For basic strings (double-quoted), escape sequences and unicode escapes are
+/// decoded. For literal strings (single-quoted), the content is taken verbatim.
+pub fn interpret_key_alloc(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
+    const key = std.mem.trim(u8, str, " \t");
+
+    if (key.len >= 2 and key[0] == '"' and key[key.len - 1] == '"') {
+        return try unescape_basic_string(allocator, key[1 .. key.len - 1]);
+    }
+    if (key.len >= 2 and key[0] == '\'' and key[key.len - 1] == '\'') {
+        return try allocator.dupe(u8, key[1 .. key.len - 1]);
+    }
+    if (key.len > 0 and all(key, valid_key_char)) return try allocator.dupe(u8, key);
+    return TypeError.InvalidKey;
+}
+
+/// Unescapes a basic string, handling escape sequences and unicode escapes.
+fn unescape_basic_string(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+    var out = std.ArrayList(u8).empty;
+    errdefer out.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < s.len) : (i += 1) {
+        const c = s[i];
+        if (c != '\\') {
+            try out.append(allocator, c);
+            continue;
+        }
+        if (i + 1 >= s.len) return TypeError.InvalidEscape;
+        i += 1;
+        const e = s[i];
+        switch (e) {
+            '\\' => try out.append(allocator, '\\'),
+            '"' => try out.append(allocator, '"'),
+            'b' => try out.append(allocator, 0x08),
+            't' => try out.append(allocator, '\t'),
+            'n' => try out.append(allocator, '\n'),
+            'f' => try out.append(allocator, 0x0c),
+            'r' => try out.append(allocator, '\r'),
+            'u', 'U' => {
+                const digits: usize = if (e == 'u') 4 else 8;
+                if (i + digits >= s.len) return TypeError.InvalidUnicode;
+                var cp: u21 = 0;
+                for (0..digits) |d_i| {
+                    const h = s[i + 1 + d_i];
+                    cp = (cp << 4) | (std.fmt.charToDigit(h, 16) catch return TypeError.InvalidUnicode);
+                }
+                i += digits;
+                var buf: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(cp, &buf) catch return TypeError.InvalidUnicode;
+                try out.appendSlice(allocator, buf[0..n]);
+            },
+            '\n' => {
+                // Skip whitespace
+                while (i + 1 < s.len and (s[i + 1] == ' ' or s[i + 1] == '\t')) : (i += 1) {}
+            },
+            else => return TypeError.InvalidEscape,
+        }
+    }
+
+    return try out.toOwnedSlice(allocator);
 }
 
 pub fn interpret_int(str: []const u8) ?i64 {

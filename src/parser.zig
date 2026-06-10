@@ -82,6 +82,7 @@ pub const Parser = struct {
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
         self.reset();
         self.content = content;
+        self.skip_utf8_bom();
         return self.parse_root() catch |err| {
             self.make_error_context(err);
             return err;
@@ -446,6 +447,17 @@ pub const Parser = struct {
     fn starts_with(self: *Parser, prefix: []const u8) bool {
         if (self.index + prefix.len > self.content.len) return false;
         return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
+    }
+
+    fn skip_utf8_bom(self: *Parser) void {
+        if (self.index != 0) return;
+        if (self.content.len < 3) return;
+        if (self.content[0] == 0xEF and
+            self.content[1] == 0xBB and
+            self.content[2] == 0xBF)
+        {
+            self.index = 3;
+        }
     }
 
     fn skip_whitespace(self: *Parser) void {

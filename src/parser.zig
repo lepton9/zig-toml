@@ -5,6 +5,7 @@ const KeyValue = @import("table.zig").KeyValue;
 
 pub const ParseError = error{
     OpenFileError,
+    NotUTF8,
     InvalidTableNesting,
     InvalidValue,
     InvalidKey,
@@ -82,7 +83,6 @@ pub const Parser = struct {
     pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
         self.reset();
         self.content = content;
-        self.skip_utf8_bom();
         return self.parse_root() catch |err| {
             self.make_error_context(err);
             return err;
@@ -90,6 +90,8 @@ pub const Parser = struct {
     }
 
     fn parse_root(self: *Parser) !*toml.Toml {
+        if (!std.unicode.utf8ValidateSlice(self.content)) return ParseError.NotUTF8;
+        self.skip_utf8_bom();
         const root = try toml.Toml.init(self.alloc);
         errdefer root.deinit();
         try self.parse_table(&root.table.table);
@@ -163,7 +165,10 @@ pub const Parser = struct {
             switch (c) {
                 '=' => {
                     if (start) |i| {
-                        try parts.append(self.alloc, std.mem.trim(u8, self.content[i..self.index], " \t"));
+                        try parts.append(
+                            self.alloc,
+                            std.mem.trim(u8, self.content[i..self.index], " \t"),
+                        );
                     }
                     self.advance();
                     return try parts.toOwnedSlice(self.alloc);
@@ -262,6 +267,14 @@ pub const Parser = struct {
                 },
                 else => {},
             }
+
+            // Disallow unescaped control characters in strings.
+            if ((c <= 0x1F or c == 0x7F) and c != '\t') {
+                if (!(is_multiline and (c == '\n' or c == '\r'))) {
+                    return ParseError.InvalidChar;
+                }
+            }
+
             try output.append(self.alloc, c);
             self.advance();
         }
@@ -301,7 +314,8 @@ pub const Parser = struct {
         ) catch return ParseError.InvalidUnicode;
         for (0..size) |_| self.advance();
         var buf: [4]u8 = undefined;
-        const len = try std.unicode.utf8Encode(cp, buf[0..]);
+        const len = std.unicode.utf8Encode(cp, buf[0..]) catch
+            return ParseError.InvalidUnicode;
         try output.appendSlice(self.alloc, buf[0..len]);
     }
 
@@ -352,12 +366,22 @@ pub const Parser = struct {
                 var nested_n: u8 = 0;
                 const table = blk: {
                     if (parts.len == 1) {
-                        break :blk try root.get_or_create_table(parts, .array_t, .explicit, self.alloc);
+                        break :blk try root.get_or_create_table(
+                            parts,
+                            .array_t,
+                            .explicit,
+                            self.alloc,
+                        );
                     } else {
                         const last_array = try root.get_last_array(parts[0 .. parts.len - 1], &nested_n);
                         if (last_array.items.len == 0) return ParseError.ExpectedTable;
                         const last = &last_array.items[last_array.items.len - 1].table;
-                        break :blk try last.get_or_create_table(parts[nested_n..], .array_t, .explicit, self.alloc);
+                        break :blk try last.get_or_create_table(
+                            parts[nested_n..],
+                            .array_t,
+                            .explicit,
+                            self.alloc,
+                        );
                     }
                 };
                 try self.parse_table(table);
@@ -471,6 +495,7 @@ pub const Parser = struct {
     }
 
     fn skip_line(self: *Parser) !void {
+        var in_comment = false;
         while (self.current()) |c| {
             if (c == '\r') {
                 const n = try self.try_next();
@@ -481,6 +506,17 @@ pub const Parser = struct {
                 self.advance();
                 break;
             }
+
+            if (c == '#') {
+                in_comment = true;
+                self.advance();
+                continue;
+            }
+
+            if (in_comment) if (((c >= 0x00 and c <= 0x08) or
+                (c >= 0x0A and c <= 0x1F) or c == 0x7F))
+                return ParseError.InvalidChar;
+
             self.advance();
         }
     }

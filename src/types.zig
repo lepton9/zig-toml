@@ -61,24 +61,37 @@ pub fn interpret_key(str: []const u8) ![]const u8 {
 }
 
 /// Interpret and allocate the key.
-///
-/// For basic strings (double-quoted), escape sequences and unicode escapes are
-/// decoded. For literal strings (single-quoted), the content is taken verbatim.
 pub fn interpret_key_alloc(allocator: std.mem.Allocator, str: []const u8) ![]u8 {
     const key = std.mem.trim(u8, str, " \t");
 
+    // Keys may not be multiline strings
+    if (std.mem.startsWith(u8, key, "\"\"\"")) return TypeError.InvalidKey;
+    if (std.mem.startsWith(u8, key, "'''")) return TypeError.InvalidKey;
+
     if (key.len >= 2 and key[0] == '"' and key[key.len - 1] == '"') {
-        return try unescape_basic_string(allocator, key[1 .. key.len - 1]);
+        // Single-line basic string key
+        const inner = key[1 .. key.len - 1];
+        try validateSingleLineKeyInner(inner);
+        return try unescapeSingleLineString(allocator, inner);
     }
     if (key.len >= 2 and key[0] == '\'' and key[key.len - 1] == '\'') {
-        return try allocator.dupe(u8, key[1 .. key.len - 1]);
+        const inner = key[1 .. key.len - 1];
+        try validateSingleLineKeyInner(inner);
+        return try allocator.dupe(u8, inner);
     }
     if (key.len > 0 and all(key, valid_key_char)) return try allocator.dupe(u8, key);
     return TypeError.InvalidKey;
 }
 
-/// Unescapes a basic string, handling escape sequences and unicode escapes.
-fn unescape_basic_string(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
+fn validateSingleLineKeyInner(inner: []const u8) TypeError!void {
+    for (inner) |c| {
+        if (c == '\n' or c == '\r') return TypeError.InvalidKey;
+        if ((c <= 0x1F or c == 0x7F) and c != '\t') return TypeError.InvalidKey;
+    }
+}
+
+/// Unescapes a string, handling escape sequences and unicode escapes.
+fn unescapeSingleLineString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
     var out = std.ArrayList(u8).empty;
     errdefer out.deinit(allocator);
 
@@ -106,17 +119,16 @@ fn unescape_basic_string(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
                 var cp: u21 = 0;
                 for (0..digits) |d_i| {
                     const h = s[i + 1 + d_i];
-                    cp = (cp << 4) | (std.fmt.charToDigit(h, 16) catch return TypeError.InvalidUnicode);
+                    cp = (cp << 4) | (std.fmt.charToDigit(h, 16) catch
+                        return TypeError.InvalidUnicode);
                 }
                 i += digits;
                 var buf: [4]u8 = undefined;
-                const n = std.unicode.utf8Encode(cp, &buf) catch return TypeError.InvalidUnicode;
+                const n = std.unicode.utf8Encode(cp, &buf) catch
+                    return TypeError.InvalidUnicode;
                 try out.appendSlice(allocator, buf[0..n]);
             },
-            '\n' => {
-                // Skip whitespace
-                while (i + 1 < s.len and (s[i + 1] == ' ' or s[i + 1] == '\t')) : (i += 1) {}
-            },
+            '\n', '\r' => return TypeError.InvalidEscape,
             else => return TypeError.InvalidEscape,
         }
     }
@@ -281,9 +293,7 @@ fn split_quote_aware(
         try parts.append(allocator, std.mem.trim(u8, part, " \t"));
         start += ind + 1;
     }
-    if (start < str.len) {
-        try parts.append(allocator, std.mem.trim(u8, str[start..], " \t"));
-    }
+    if (start <= str.len) try parts.append(allocator, std.mem.trim(u8, str[start..], " \t"));
     return try parts.toOwnedSlice(allocator);
 }
 

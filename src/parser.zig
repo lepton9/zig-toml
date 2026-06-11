@@ -1,6 +1,7 @@
 const std = @import("std");
 const toml = @import("toml.zig");
 const types = @import("types.zig");
+const spec = @import("spec.zig");
 const KeyValue = @import("table.zig").KeyValue;
 
 pub const ParseError = error{
@@ -244,10 +245,24 @@ pub const Parser = struct {
         var output = try std.ArrayList(u8).initCapacity(self.gpa, 5);
         errdefer output.deinit(self.gpa);
         for (0..delimiter.len) |_| self.advance();
-        const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
-            std.mem.eql(u8, delimiter, "'''");
-        if (is_multiline and (self.current() == '\n' or self.current() == '\\'))
-            try self.skipWhileChar();
+
+        const is_multiline_basic = std.mem.eql(u8, delimiter, "\"\"\"");
+        const is_multiline_literal = std.mem.eql(u8, delimiter, "'''");
+        const is_multiline = is_multiline_basic or is_multiline_literal;
+
+        if (is_multiline) if (self.current()) |c| switch (c) {
+            '\n' => self.advance(),
+            '\r' => {
+                if (self.peek() != '\n') return ParseError.InvalidChar;
+                self.advance();
+                self.advance();
+            },
+            '\\' => if (is_multiline_basic) {
+                try self.parseEscaped(true, &output);
+            },
+            else => {},
+        };
+
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {
@@ -258,7 +273,16 @@ pub const Parser = struct {
                         return output.toOwnedSlice(self.gpa);
                     }
                 },
-                '\n', '\r' => if (!is_multiline) return ParseError.InvalidChar,
+                '\n' => if (!is_multiline) return ParseError.InvalidChar,
+                '\r' => {
+                    if (!is_multiline) return ParseError.InvalidChar;
+                    // Normalize CRLF to LF
+                    if (self.peek() != '\n') return ParseError.InvalidChar;
+                    try output.append(self.gpa, '\n');
+                    self.advance();
+                    self.advance();
+                    continue;
+                },
                 '\\' => if (delimiter[0] == '\"') {
                     try self.parseEscaped(is_multiline, &output);
                     continue;
@@ -285,7 +309,13 @@ pub const Parser = struct {
         switch (c) {
             'u' => try self.parseUnicode(4, output),
             'U' => try self.parseUnicode(8, output),
+            'x' => if (comptime spec.isV1_1()) {
+                try self.parseHexByte(output);
+            } else return ParseError.InvalidEscapeValue,
             'b' => try output.append(self.gpa, 0x08),
+            'e' => if (comptime spec.isV1_1()) {
+                try output.append(self.gpa, 0x1b);
+            } else return ParseError.InvalidEscapeValue,
             'f' => try output.append(self.gpa, 0x0c),
             't' => try output.append(self.gpa, '\t'),
             'n' => try output.append(self.gpa, '\n'),
@@ -301,6 +331,19 @@ pub const Parser = struct {
             },
             else => return ParseError.InvalidEscapeValue,
         }
+    }
+
+    fn parseHexByte(self: *Parser, output: *std.ArrayList(u8)) !void {
+        if (self.index + 2 > self.content.len) return ParseError.ErrorEOF;
+        const b = std.fmt.parseInt(u8, self.content[self.index .. self.index + 2], 16) catch
+            return ParseError.InvalidEscapeValue;
+        self.advance();
+        self.advance();
+
+        var buf: [4]u8 = undefined;
+        const len = std.unicode.utf8Encode(@as(u21, b), buf[0..]) catch
+            return ParseError.InvalidUnicode;
+        try output.appendSlice(self.gpa, buf[0..len]);
     }
 
     fn parseUnicode(self: *Parser, size: u8, output: *std.ArrayList(u8)) !void {
@@ -390,27 +433,40 @@ pub const Parser = struct {
     fn parseInlineTable(self: *Parser) !toml.TomlTable {
         var table = toml.TomlTable.initInline();
         errdefer table.deinit(self.gpa);
-        var comma = false;
         self.advance();
-        self.skipWhitespace();
-        while (self.current()) |c| {
+
+        const allow_newlines = comptime spec.isV1_1();
+        const allow_trailing_comma = comptime spec.isV1_1();
+
+        var comma = false;
+        while (true) {
+            if (comptime allow_newlines) try self.skipWhileChar() else self.skipWhitespace();
+
+            const c = self.current() orelse return ParseError.ErrorEOF;
+            if (!allow_newlines and (c == '\n' or c == '\r' or c == '#'))
+                return ParseError.InvalidChar;
+
             if (c == '}') {
-                if (comma) return ParseError.TrailingComma;
+                if (comma and !allow_trailing_comma) return ParseError.TrailingComma;
                 self.advance();
                 return table;
             }
+
             const kv = try self.parseKeyValue();
             try table.addKeyValue(kv, self.gpa);
-            self.skipWhitespace();
-            if (self.current() == ',') {
+
+            if (comptime allow_newlines) try self.skipWhileChar() else self.skipWhitespace();
+
+            const d = self.current() orelse return ParseError.ErrorEOF;
+            if (!allow_newlines and (d == '\n' or d == '\r' or d == '#'))
+                return ParseError.InvalidChar;
+
+            comma = false;
+            if (d == ',') {
                 comma = true;
                 self.advance();
-                self.skipWhitespace();
-            } else {
-                comma = false;
             }
         }
-        return ParseError.ErrorEOF;
     }
 
     fn parseScalar(self: *Parser) !toml.TomlValue {

@@ -1,4 +1,5 @@
 const std = @import("std");
+const spec = @import("spec.zig");
 
 pub const TypeError = error{
     InvalidKey,
@@ -113,6 +114,19 @@ fn unescapeSingleLineString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
             'n' => try out.append(allocator, '\n'),
             'f' => try out.append(allocator, 0x0c),
             'r' => try out.append(allocator, '\r'),
+            'e' => if (comptime spec.isV1_1()) {
+                try out.append(allocator, 0x1b);
+            } else return TypeError.InvalidEscape,
+            'x' => if (comptime spec.isV1_1()) {
+                if (i + 2 >= s.len) return TypeError.InvalidEscape;
+                const b = std.fmt.parseInt(u8, s[i + 1 .. i + 3], 16) catch
+                    return TypeError.InvalidEscape;
+                i += 2;
+                var buf: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(@as(u21, b), &buf) catch
+                    return TypeError.InvalidUnicode;
+                try out.appendSlice(allocator, buf[0..n]);
+            } else return TypeError.InvalidEscape,
             'u', 'U' => {
                 const digits: usize = if (e == 'u') 4 else 8;
                 if (i + digits >= s.len) return TypeError.InvalidUnicode;
@@ -317,7 +331,9 @@ pub fn interpretTimeOffset(str: []const u8) !i16 {
 }
 
 pub fn interpretDateTime(str: []const u8) !?DateTime {
-    if (str.len < 19 or (str[10] != 'T' and str[10] != 't' and str[10] != ' ')) return null;
+    // Seconds are optional in TOML 1.1
+    const min_len: usize = if (comptime spec.isV1_1()) 16 else 19;
+    if (str.len < min_len or (str[10] != 'T' and str[10] != 't' and str[10] != ' ')) return null;
     const time_start = 11;
     const index_z: ?usize = std.mem.indexOfAny(u8, str[time_start..], "Zz");
     const time_end = time_start + (index_z orelse
@@ -348,15 +364,29 @@ pub fn interpretDate(str: []const u8) !?Date {
 }
 
 pub fn interpretTime(str: []const u8) !?Time {
-    if (str.len < 8 or str[2] != ':' or str[5] != ':') return null;
+    if (str.len < 5 or str[2] != ':') return null;
+    const allow_no_seconds = comptime spec.isV1_1();
+
     var t: Time = .{
         .hour = std.fmt.parseInt(u5, str[0..2], 10) catch return TypeError.InvalidHour,
         .minute = std.fmt.parseInt(u6, str[3..5], 10) catch return TypeError.InvalidMinute,
-        .second = std.fmt.parseInt(u6, str[6..8], 10) catch return TypeError.InvalidSecond,
+        .second = 0,
     };
+
+    // HH:MM (TOML 1.1 only)
+    if (str.len == 5) {
+        if (!comptime allow_no_seconds) return null;
+        try validateTime(t);
+        return t;
+    }
+
+    // HH:MM:SS[.NNNNNNNNN]
+    if (str.len < 8 or str[5] != ':') return null;
+    t.second = std.fmt.parseInt(u6, str[6..8], 10) catch return TypeError.InvalidSecond;
     if (str.len > 8) {
         if (str[8] != '.' or str.len > 18) return TypeError.InvalidNanoSecond;
-        const fraction = std.fmt.parseInt(u30, str[9..], 10) catch return TypeError.InvalidNanoSecond;
+        const fraction = std.fmt.parseInt(u30, str[9..], 10) catch
+            return TypeError.InvalidNanoSecond;
         t.nanosecond = @truncate(fraction * (1000000000 / std.math.pow(u64, 10, str.len - 9)));
     }
     try validateTime(t);

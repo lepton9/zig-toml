@@ -61,9 +61,9 @@ test "strings" {
         \\ str = "I'm a string. \"You can quote me\". Name\tJos\u00E9\nLocation\tSF."
         \\ str1 = "The quick brown fox jumps over the lazy dog."
         \\ str2 = """
-        \\ The quick brown \
-        \\ 
-        \\ 
+        \\The quick brown \
+        \\
+        \\
         \\   fox jumps over \
         \\     the lazy dog."""
         \\ str3 = """\

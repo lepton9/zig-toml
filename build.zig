@@ -6,7 +6,7 @@ pub fn build(b: *std.Build) void {
 
     const toml_version = b.option(
         []const u8,
-        "toml-version",
+        "toml_version",
         "TOML spec version: 1.0.0 or 1.1.0 (default: 1.0.0)",
     ) orelse "1.0.0";
 

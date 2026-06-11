@@ -137,11 +137,169 @@ fn unescapeSingleLineString(allocator: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 pub fn interpret_int(str: []const u8) ?i64 {
-    return std.fmt.parseInt(i64, str, 0) catch return null;
+    return parseTomlInt(str);
 }
 
 pub fn interpret_float(str: []const u8) ?f64 {
-    return std.fmt.parseFloat(f64, str) catch return null;
+    return parseTomlFloat(str);
+}
+
+fn parseTomlInt(str: []const u8) ?i64 {
+    if (str.len == 0) return null;
+
+    var i: usize = 0;
+    var negative = false;
+    switch (str[0]) {
+        '-' => {
+            negative = true;
+            i = 1;
+        },
+        '+' => i = 1,
+        else => {},
+    }
+    if (i >= str.len) return null;
+
+    var base: u8 = 10;
+    var start_digits = i;
+
+    if (str[i] == '0') {
+        if (i + 1 == str.len) return 0;
+        const n = str[i + 1];
+        switch (n) {
+            'x' => {
+                base = 16;
+                start_digits = i + 2;
+            },
+            'o' => {
+                base = 8;
+                start_digits = i + 2;
+            },
+            'b' => {
+                base = 2;
+                start_digits = i + 2;
+            },
+            '.', 'e', 'E' => return null, // float
+            else => return null,
+        }
+
+        if ((str[0] == '+' or str[0] == '-') and base != 10) {
+            return null;
+        }
+    }
+
+    if (start_digits >= str.len) return null;
+
+    var had_digit = false;
+    var last_was_underscore = false;
+
+    i = start_digits;
+    while (i < str.len) : (i += 1) {
+        const c = str[i];
+        if (c == '_') {
+            if (!had_digit) return null;
+            if (last_was_underscore) return null;
+            if (i + 1 >= str.len) return null;
+            if (std.fmt.charToDigit(str[i + 1], base) catch null == null) return null;
+            last_was_underscore = true;
+            continue;
+        }
+
+        had_digit = true;
+        last_was_underscore = false;
+    }
+    if (!had_digit) return null;
+    if (last_was_underscore) return null;
+
+    return std.fmt.parseInt(i64, str, 0) catch null;
+}
+
+fn parseTomlFloat(str: []const u8) ?f64 {
+    if (str.len == 0) return null;
+
+    var b_i: usize = 0;
+    switch (str[0]) {
+        '+', '-' => b_i = 1,
+        else => {},
+    }
+    if (b_i >= str.len) return null;
+
+    // Special floats.
+    if (std.mem.eql(u8, str[b_i..], "nan")) return std.math.nan(f64);
+    if (std.mem.eql(u8, str[b_i..], "inf")) {
+        if (str[0] == '-') return -std.math.inf(f64);
+        return std.math.inf(f64);
+    }
+
+    // Must start with a digit and no leading zeros
+    if (!std.ascii.isDigit(str[b_i])) return null;
+    if (str[b_i] == '0' and b_i + 1 < str.len) {
+        const n = str[b_i + 1];
+        if (std.ascii.isDigit(n) or n == '_') return null;
+    }
+
+    var saw_dot = false;
+    var saw_exp = false;
+    var last: u8 = 0;
+    var any_digit = false;
+    var any_frac_digit = false;
+    var any_exp_digit = false;
+
+    var i: usize = b_i;
+    while (i < str.len) : (i += 1) {
+        const c = str[i];
+        switch (c) {
+            '_' => {
+                if (i == b_i) return null;
+                if (!std.ascii.isDigit(last)) return null;
+                if (i + 1 >= str.len) return null;
+                if (!std.ascii.isDigit(str[i + 1])) return null;
+            },
+            '.' => {
+                if (saw_dot or saw_exp) return null;
+                if (i == b_i) return null;
+                if (!std.ascii.isDigit(last)) return null;
+                if (i + 1 >= str.len) return null;
+                if (!std.ascii.isDigit(str[i + 1])) return null;
+                saw_dot = true;
+            },
+            'e', 'E' => {
+                if (saw_exp) return null;
+                if (i == b_i) return null;
+                if (last == '_' or last == '.') return null;
+                if (i + 1 >= str.len) return null;
+                const n = str[i + 1];
+                if (n == '+' or n == '-') {
+                    if (i + 2 >= str.len) return null;
+                    if (!std.ascii.isDigit(str[i + 2])) return null;
+                } else {
+                    if (!std.ascii.isDigit(n)) return null;
+                }
+                saw_exp = true;
+            },
+            '+', '-' => {
+                if (i == b_i) return null;
+                if (last != 'e' and last != 'E') return null;
+                if (i + 1 >= str.len) return null;
+                if (!std.ascii.isDigit(str[i + 1])) return null;
+            },
+            else => {
+                if (!std.ascii.isDigit(c)) return null;
+                any_digit = true;
+                if (saw_exp) any_exp_digit = true else if (saw_dot) any_frac_digit = true;
+            },
+        }
+        last = c;
+    }
+
+    if (!saw_dot and !saw_exp) return null;
+    if (!any_digit) return null;
+    if (last == '_' or last == '.' or
+        last == 'e' or last == 'E' or
+        last == '+' or last == '-') return null;
+    if (saw_dot and !any_frac_digit) return null;
+    if (saw_exp and !any_exp_digit) return null;
+
+    return std.fmt.parseFloat(f64, str) catch null;
 }
 
 pub fn interpret_bool(str: []const u8) ?bool {

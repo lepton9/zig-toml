@@ -161,44 +161,42 @@ pub const Parser = struct {
         errdefer parts.deinit(self.gpa);
         var start: ?usize = null;
         self.skipWhitespace();
-        while (self.current()) |c| {
-            switch (c) {
-                '=' => {
-                    if (start) |i| {
-                        try parts.append(
-                            self.gpa,
-                            std.mem.trim(u8, self.content[i..self.index], " \t"),
-                        );
-                    }
-                    self.advance();
-                    return try parts.toOwnedSlice(self.gpa);
-                },
-                '\"', '\'' => {
-                    if (start) |_| return ParseError.InvalidKey;
-                    const delim = self.content[self.index .. self.index + 1];
+        while (self.current()) |c| switch (c) {
+            '=' => {
+                if (start) |i| {
+                    try parts.append(
+                        self.gpa,
+                        std.mem.trim(u8, self.content[i..self.index], " \t"),
+                    );
+                }
+                self.advance();
+                return try parts.toOwnedSlice(self.gpa);
+            },
+            '\"', '\'' => {
+                if (start) |_| return ParseError.InvalidKey;
+                const delim = self.content[self.index .. self.index + 1];
+                start = self.index;
+                const key_part = try self.parseStringValue(delim);
+                defer self.gpa.free(key_part);
+                self.skipWhitespace();
+            },
+            '.' => {
+                if (start) |i| {
+                    try parts.append(self.gpa, std.mem.trim(u8, self.content[i..self.index], " \t"));
+                    start = null;
+                }
+                if (parts.items.len == 0) return ParseError.InvalidKey;
+                self.advance();
+                self.skipWhitespace();
+            },
+            '\n' => return ParseError.InvalidKey,
+            else => {
+                if (start == null) {
                     start = self.index;
-                    const key_part = try self.parseStringValue(delim);
-                    defer self.gpa.free(key_part);
-                    self.skipWhitespace();
-                },
-                '.' => {
-                    if (start) |i| {
-                        try parts.append(self.gpa, std.mem.trim(u8, self.content[i..self.index], " \t"));
-                        start = null;
-                    }
-                    if (parts.items.len == 0) return ParseError.InvalidKey;
-                    self.advance();
-                    self.skipWhitespace();
-                },
-                '\n' => return ParseError.InvalidKey,
-                else => {
-                    if (start == null) {
-                        start = self.index;
-                    }
-                    self.advance();
-                },
-            }
-        }
+                }
+                self.advance();
+            },
+        };
         return ParseError.ErrorEOF;
     }
 

@@ -418,12 +418,13 @@ test "array_of_tables" {
 }
 
 test "encode" {
-    const p = try parser.Parser.init(std.testing.allocator);
+    const gpa = std.testing.allocator;
+    const p = try parser.Parser.init(gpa);
     defer p.deinit();
     const io = std.testing.io;
     const parsed_file = try p.parseFile(io, "test/test_easy.toml");
     defer parsed_file.deinit();
-    const encoded_toml = try parsed_file.toToml();
+    const encoded_toml = try parsed_file.toToml(gpa);
     defer p.gpa.free(encoded_toml);
     const parsed_encoded = try p.parseData(encoded_toml);
     defer parsed_encoded.deinit();

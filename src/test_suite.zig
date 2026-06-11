@@ -450,8 +450,13 @@ const TestRunner = struct {
                 const arena = self.arena.allocator();
                 defer _ = self.arena.reset(.retain_capacity);
 
-                const expected_val = try std.json.parseFromSliceLeaky(std.json.Value, arena, expected_json, .{});
-                const actual_val = try encode.tomlTableToJsonValue(arena, toml.getTable());
+                const expected_val = try std.json.parseFromSliceLeaky(
+                    std.json.Value,
+                    arena,
+                    expected_json,
+                    .{},
+                );
+                const actual_val = try toml.toJsonValue(arena);
 
                 const eql: bool, const err: ?anyerror = blk: {
                     const eql = self.jsonEquality(arena, &actual_val, &expected_val) catch |err|
@@ -486,7 +491,7 @@ const TestRunner = struct {
                 const actual_json: ?[]const u8 = if (self.cfg.show) blk: {
                     const arena = self.arena.allocator();
                     defer _ = self.arena.reset(.retain_capacity);
-                    const actual_val = encode.tomlTableToJsonValue(arena, toml.getTable()) catch break :blk null;
+                    const actual_val = toml.toJsonValue(arena) catch break :blk null;
                     break :blk self.stringifyJsonValue(actual_val) catch null;
                 } else null;
                 defer if (actual_json) |s| self.gpa.free(s);

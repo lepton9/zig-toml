@@ -2,6 +2,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const tab = @import("table.zig");
 const encode = @import("encode.zig");
+
 pub const TomlHashMap = tab.TomlHashMap;
 pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
@@ -15,20 +16,20 @@ pub fn deinitTomlArray(array: *TomlArray, allocator: std.mem.Allocator) void {
 
 pub const Toml = struct {
     table: TomlValue,
-    alloc: std.mem.Allocator,
+    gpa: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) !*Toml {
         const t = try allocator.create(Toml);
         t.* = .{
             .table = .{ .table = TomlTable.init(.root, .explicit) },
-            .alloc = allocator,
+            .gpa = allocator,
         };
         return t;
     }
 
     pub fn deinit(self: *Toml) void {
-        self.table.deinit(self.alloc);
-        self.alloc.destroy(self);
+        self.table.deinit(self.gpa);
+        self.gpa.destroy(self);
     }
 
     /// Get the root TomlTable.
@@ -36,18 +37,23 @@ pub const Toml = struct {
         return &self.table.table;
     }
 
-    /// Convert the parsed Toml to JSON string.
-    pub fn toJson(self: *const Toml) ![]const u8 {
-        return try self.table.toJson(self.alloc);
+    /// Convert and allocate the parsed Toml to JSON string.
+    pub fn toJson(self: *const Toml, gpa: std.mem.Allocator) ![]const u8 {
+        return self.table.toJson(gpa);
     }
 
-    /// Convert the parsed Toml to TOML string.
-    pub fn toToml(self: *Toml) ![]const u8 {
-        return try self.table.toToml(self.alloc);
+    /// Convert and allocate the parsed Toml to TOML string.
+    pub fn toToml(self: *Toml, gpa: std.mem.Allocator) ![]const u8 {
+        return self.table.toToml(gpa);
     }
 
-    pub fn toJsonWithTypes(self: *const Toml) ![]const u8 {
-        return try self.table.toJsonWithTypes(self.alloc);
+    /// Convert and allocate the parsed Toml to JSON string.
+    pub fn toJsonValue(self: *const Toml, gpa: std.mem.Allocator) !std.json.Value {
+        return encode.tomlTableToJsonValue(gpa, &self.table.table);
+    }
+
+    pub fn toJsonWithTypes(self: *const Toml, gpa: std.mem.Allocator) ![]const u8 {
+        return self.table.toJsonWithTypes(gpa);
     }
 };
 
@@ -120,6 +126,10 @@ pub const TomlValue = union(enum) {
         var indent: usize = 0;
         try json.toJson(self, &indent);
         return json.toOwned();
+    }
+
+    pub fn toJsonValue(self: *const TomlValue, gpa: std.mem.Allocator) !std.json.Value {
+        return encode.tomlValueToJsonValue(gpa, self);
     }
 
     pub fn toJsonWithTypes(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {

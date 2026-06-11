@@ -4,11 +4,22 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    const toml_version = b.option(
+        []const u8,
+        "toml-version",
+        "TOML spec version: 1.0.0 or 1.1.0 (default: 1.0.0)",
+    ) orelse "1.0.0";
+
+    const opts = b.addOptions();
+    opts.addOption([]const u8, "toml_version", toml_version);
+    const opts_mod = opts.createModule();
+
     const lib_mod = b.addModule("toml", .{
         .root_source_file = b.path("src/root.zig"),
         .target = target,
         .optimize = optimize,
     });
+    lib_mod.addImport("build_options", opts_mod);
 
     const lib = b.addLibrary(.{
         .linkage = .static,
@@ -17,13 +28,13 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(lib);
 
-    const tests = b.addTest(.{
-        .root_module = b.createModule(.{
-            .root_source_file = b.path("src/tests.zig"),
-            .optimize = optimize,
-            .target = target,
-        }),
+    const tests_mod = b.createModule(.{
+        .root_source_file = b.path("src/tests.zig"),
+        .optimize = optimize,
+        .target = target,
     });
+    tests_mod.addImport("build_options", opts_mod);
+    const tests = b.addTest(.{ .root_module = tests_mod });
 
     const run_test_cmd = b.addRunArtifact(tests);
     run_test_cmd.step.dependOn(b.getInstallStep());
@@ -32,7 +43,7 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_test_cmd.step);
 
     const suite_step = b.step("test-suite", "Run upstream TOML test suite");
-    setupTestSuite(b, optimize, target, suite_step);
+    setupTestSuite(b, optimize, target, opts_mod, suite_step);
 
     const check_step = b.step("check", "Check for compile errors");
     check_step.dependOn(&tests.step);
@@ -43,6 +54,7 @@ fn setupTestSuite(
     b: *std.Build,
     optimize: std.builtin.OptimizeMode,
     target: std.Build.ResolvedTarget,
+    opts_mod: *std.Build.Module,
     step: *std.Build.Step,
 ) void {
     const suite_exe = b.addExecutable(.{
@@ -53,6 +65,7 @@ fn setupTestSuite(
             .target = target,
         }),
     });
+    suite_exe.root_module.addImport("build_options", opts_mod);
 
     const suite_manifest = b.option(
         []const u8,

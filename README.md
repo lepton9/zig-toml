@@ -1,6 +1,6 @@
 # zig-toml
 
-TOML (v1.0.0) parser in Zig
+TOML parser in Zig (supports v1.0.0 and v1.1.0)
 
 ## Usage
 Add to `build.zig.zon`
@@ -14,6 +14,13 @@ In `build.zig`
 const toml = b.dependency("toml", .{ .target = target, .optimize = optimize });
 const toml_mod = toml.module("toml");
 exe.root_module.addImport("toml", toml_mod);
+
+// Optional: select spec behavior (default: 1.0.0)
+// const toml = b.dependency("toml", .{
+//     .target = target,
+//     .optimize = optimize,
+//     .toml_version = "1.1.0",
+// });
 ```
 
 ## Example

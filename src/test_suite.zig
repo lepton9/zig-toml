@@ -264,17 +264,17 @@ const TestRunner = struct {
         {
             if (actual.* != .string) return false;
             if (eql(u8, expected.type_name, "date-local")) {
-                const a = try types.interpret_date(actual.string) orelse return false;
-                const e = try types.interpret_date(expected.value) orelse return false;
+                const a = try types.interpretDate(actual.string) orelse return false;
+                const e = try types.interpretDate(expected.value) orelse return false;
                 return a.year == e.year and a.month == e.month and a.day == e.day;
             }
             if (eql(u8, expected.type_name, "time-local")) {
-                const a = try types.interpret_time(actual.string) orelse return false;
-                const e = try types.interpret_time(expected.value) orelse return false;
+                const a = try types.interpretTime(actual.string) orelse return false;
+                const e = try types.interpretTime(expected.value) orelse return false;
                 return a.eql(e);
             }
-            const a = try types.interpret_datetime(actual.string) orelse return false;
-            const e = try types.interpret_datetime(expected.value) orelse return false;
+            const a = try types.interpretDateTime(actual.string) orelse return false;
+            const e = try types.interpretDateTime(expected.value) orelse return false;
             return a.eql(e);
         }
 
@@ -411,7 +411,7 @@ const TestRunner = struct {
                 };
             defer self.gpa.free(content);
 
-            const parsed = self.parser.parse_string(content);
+            const parsed = self.parser.parseData(content);
             if (item.expect_ok) {
                 const expected_json = self.loadExpectedJson(item.path) orelse {
                     stats.failures += 1;
@@ -430,7 +430,7 @@ const TestRunner = struct {
                     stats.failures += 1;
                     if (!showFailure(self.cfg, stats.failures)) continue;
 
-                    const ctx = self.parser.get_error_context();
+                    const ctx = self.parser.getErrorCtx();
                     const line_number: ?usize = if (ctx) |c| c.line_number else null;
                     const err_to_print: anyerror = if (ctx) |c| c.err else err;
 
@@ -451,7 +451,7 @@ const TestRunner = struct {
                 defer _ = self.arena.reset(.retain_capacity);
 
                 const expected_val = try std.json.parseFromSliceLeaky(std.json.Value, arena, expected_json, .{});
-                const actual_val = try encode.tomlTableToJsonValue(arena, toml.get_table());
+                const actual_val = try encode.tomlTableToJsonValue(arena, toml.getTable());
 
                 const eql: bool, const err: ?anyerror = blk: {
                     const eql = self.jsonEquality(arena, &actual_val, &expected_val) catch |err|
@@ -486,7 +486,7 @@ const TestRunner = struct {
                 const actual_json: ?[]const u8 = if (self.cfg.show) blk: {
                     const arena = self.arena.allocator();
                     defer _ = self.arena.reset(.retain_capacity);
-                    const actual_val = encode.tomlTableToJsonValue(arena, toml.get_table()) catch break :blk null;
+                    const actual_val = encode.tomlTableToJsonValue(arena, toml.getTable()) catch break :blk null;
                     break :blk self.stringifyJsonValue(actual_val) catch null;
                 } else null;
                 defer if (actual_json) |s| self.gpa.free(s);

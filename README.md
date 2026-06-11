@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
     const p = try toml.Parser.init(gpa);
     defer p.deinit();
 
-    const toml_table = try p.parse_file(io, "example.toml");
+    const toml_table = try p.parseFile(io, "example.toml");
     defer toml_table.deinit();
 }
 ```

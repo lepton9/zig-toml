@@ -33,6 +33,10 @@ pub fn build(b: *std.Build) void {
 
     const suite_step = b.step("test-suite", "Run upstream TOML test suite");
     setupTestSuite(b, optimize, target, suite_step);
+
+    const check_step = b.step("check", "Check for compile errors");
+    check_step.dependOn(&tests.step);
+    check_step.dependOn(&lib.step);
 }
 
 fn setupTestSuite(

@@ -12,14 +12,14 @@ test "parser" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
     const io = std.testing.io;
-    const toml_data = try p.parse_file(io, "test/test_hard.toml");
+    const toml_data = try p.parseFile(io, "test/test_hard.toml");
     defer toml_data.deinit();
 }
 
 test "keys" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ key = "value"
         \\ bare_key = "value"
         \\ bare-key = "value"
@@ -40,7 +40,7 @@ test "keys" {
         \\ 3.14159 = "pi"
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(std.mem.eql(u8, t.get("\"127.0.0.1\"").?.string, "value"));
     try std.testing.expect(
         std.mem.eql(u8, t.get("\"\"").?.string, t.get("''").?.string),
@@ -57,7 +57,7 @@ test "keys" {
 test "strings" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ str = "I'm a string. \"You can quote me\". Name\tJos\u00E9\nLocation\tSF."
         \\ str1 = "The quick brown fox jumps over the lazy dog."
         \\ str2 = """
@@ -91,7 +91,7 @@ test "strings" {
         \\ str8 = ''''That,' she said, 'is still pointless.''''
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(std.mem.eql(u8, t.get("str1").?.string, t.get("str2").?.string));
     try std.testing.expect(std.mem.eql(u8, t.get("str2").?.string, t.get("str3").?.string));
     try std.testing.expect(std.mem.eql(u8, t.get("str6").?.string, "Here are fifteen quotation marks: \"\"\"\"\"\"\"\"\"\"\"\"\"\"\"."));
@@ -102,7 +102,7 @@ test "strings" {
 test "integer" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ int1 = +99
         \\ int2 = 42
         \\ int3 = 0
@@ -119,7 +119,7 @@ test "integer" {
         \\ bin1 = 0b11010110
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(t.get("int1").?.int == 99);
     try std.testing.expect(t.get("int3").?.int == 0);
     try std.testing.expect(t.get("int4").?.int == -17);
@@ -134,7 +134,7 @@ test "integer" {
 test "float" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ flt1 = +1.0
         \\ flt2 = 3.1415
         \\ flt3 = -0.01
@@ -151,7 +151,7 @@ test "float" {
         \\ sf6 = -nan # valid, actual encoding is implementation-specific
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(t.get("flt1").?.float == 1.0);
     try std.testing.expect(t.get("flt2").?.float == 3.1415);
     try std.testing.expect(t.get("flt3").?.float == -0.01);
@@ -171,12 +171,12 @@ test "float" {
 test "boolean" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ bool1 = true
         \\ bool2 = false
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(t.get("bool1").?.bool == true);
     try std.testing.expect(t.get("bool2").?.bool == false);
 }
@@ -184,7 +184,7 @@ test "boolean" {
 test "datetime" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ odt1 = 1979-05-27T07:32:00Z
         \\ odt2 = 1979-05-27T00:32:00-07:00
         \\ odt3 = 1979-05-27T00:32:00.999999-07:00
@@ -196,7 +196,7 @@ test "datetime" {
         \\ lt2 = 00:32:00.999999
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(std.meta.eql(t.get("odt1").?.datetime, types.DateTime{
         .date = .{
             .day = 27,
@@ -239,7 +239,7 @@ test "datetime" {
 test "array" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ integers = [ 1, 2, 3 ]
         \\ colors = [ "red", "yellow", "green" ]
         \\ nested_arrays_of_ints = [ [ 1, 2 ], [3, 4, 5] ]
@@ -260,7 +260,7 @@ test "array" {
         \\ empty = []
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(t.get("integers").?.array.items.len == 3);
     try std.testing.expect(
         t.get("nested_arrays_of_ints").?.array.items[1].array.items[1].int == 4,
@@ -288,7 +288,7 @@ test "array" {
 test "table" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ name_inline = { first = "Tom", last = "Preston-Werner" }
         \\ point_inline = { x = 1, y = 2 }
         \\ animal_inline = { type.name = "pug" }
@@ -324,7 +324,7 @@ test "table" {
         \\ type.name = "pug"
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(std.mem.eql(
         u8,
         t.get("fruit").?.get("apple").?.get("color").?.string,
@@ -359,7 +359,7 @@ test "table" {
 test "array_of_tables" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    const toml_data = try p.parse_string(
+    const toml_data = try p.parseData(
         \\ points = [ { x = 1, y = 2, z = 3 },
         \\            { x = 7, y = 8, z = 9 },
         \\            { x = 2, y = 4, z = 8 } ]
@@ -386,7 +386,7 @@ test "array_of_tables" {
         \\ name = "plantain"
     );
     defer toml_data.deinit();
-    const t = toml_data.get_table();
+    const t = toml_data.getTable();
     try std.testing.expect(
         t.get("products").?.array.items.len == 3,
     );
@@ -421,14 +421,14 @@ test "encode" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
     const io = std.testing.io;
-    const parsed_file = try p.parse_file(io, "test/test_easy.toml");
+    const parsed_file = try p.parseFile(io, "test/test_easy.toml");
     defer parsed_file.deinit();
-    const encoded_toml = try parsed_file.to_toml();
-    defer p.alloc.free(encoded_toml);
-    const parsed_encoded = try p.parse_string(encoded_toml);
+    const encoded_toml = try parsed_file.toToml();
+    defer p.gpa.free(encoded_toml);
+    const parsed_encoded = try p.parseData(encoded_toml);
     defer parsed_encoded.deinit();
-    const t1 = parsed_file.get_table();
-    const t2 = parsed_encoded.get_table();
+    const t1 = parsed_file.getTable();
+    const t2 = parsed_encoded.getTable();
 
     try std.testing.expect(
         std.mem.eql(u8, t1.get("title").?.string, t2.get("title").?.string),
@@ -458,7 +458,7 @@ test "encode" {
 test "adding" {
     const p = try parser.Parser.init(std.testing.allocator);
     defer p.deinit();
-    var toml_t = try p.parse_string(
+    var toml_t = try p.parseData(
         \\ value = {}
         \\ [table]
         \\ int = 123
@@ -470,34 +470,34 @@ test "adding" {
         \\ [[table_array]]
     );
     defer toml_t.deinit();
-    var t = toml_t.get_table();
+    var t = toml_t.getTable();
 
-    try t.getPtr("table").?.put("new", .{ .int = 0 }, p.alloc);
-    try t.put("added", .{ .bool = true }, p.alloc);
+    try t.getPtr("table").?.put("new", .{ .int = 0 }, p.gpa);
+    try t.put("added", .{ .bool = true }, p.gpa);
 
-    const str = try p.alloc.dupe(u8, "Adding a dotted table");
-    try t.put("add.table.str", .{ .string = str }, p.alloc);
-    try t.put("add.table.int", .{ .int = 1 }, p.alloc);
+    const str = try p.gpa.dupe(u8, "Adding a dotted table");
+    try t.put("add.table.str", .{ .string = str }, p.gpa);
+    try t.put("add.table.int", .{ .int = 1 }, p.gpa);
 
-    var array = try toml.TomlArray.initCapacity(p.alloc, 5);
-    try array.append(p.alloc, .{ .bool = true });
-    try array.append(p.alloc, .{ .float = 3.14 });
-    try array.append(p.alloc, .{ .table = toml.TomlTable.init_inline() });
-    try t.getPtr("header").?.put("array", .{ .array = array }, p.alloc);
+    var array = try toml.TomlArray.initCapacity(p.gpa, 5);
+    try array.append(p.gpa, .{ .bool = true });
+    try array.append(p.gpa, .{ .float = 3.14 });
+    try array.append(p.gpa, .{ .table = .initInline() });
+    try t.getPtr("header").?.put("array", .{ .array = array }, p.gpa);
 
-    try t.put_table("new_table", p.alloc);
-    try t.getPtr("new_table").?.put("key", .{ .int = 0 }, p.alloc);
+    try t.putTable("new_table", p.gpa);
+    try t.getPtr("new_table").?.put("key", .{ .int = 0 }, p.gpa);
 
-    try t.put_table("new_table.sub_table.new", p.alloc);
+    try t.putTable("new_table.sub_table.new", p.gpa);
     try t.getPtr("new_table").?.get("sub_table").?.getPtr("new").?.put(
         "bool",
         .{ .bool = false },
-        p.alloc,
+        p.gpa,
     );
 
-    try t.put_table("new_header.table", p.alloc);
-    try t.getPtr("new_header").?.put("key1", .{ .int = 1 }, p.alloc);
-    try t.getPtr("new_header").?.getPtr("table").?.put("key2", .{ .int = 2 }, p.alloc);
+    try t.putTable("new_header.table", p.gpa);
+    try t.getPtr("new_header").?.put("key1", .{ .int = 1 }, p.gpa);
+    try t.getPtr("new_header").?.getPtr("table").?.put("key2", .{ .int = 2 }, p.gpa);
 
     try std.testing.expect(t.get("value").?.table.t_type == .inline_t);
     try std.testing.expect(t.get("table").?.get("new").?.int == 0);

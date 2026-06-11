@@ -35,34 +35,34 @@ const ErrorContext = struct {
 };
 
 pub const Parser = struct {
-    alloc: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     content: []const u8 = undefined,
     index: usize = 0,
     error_ctx: ?ErrorContext = null,
 
     pub fn init(gpa: std.mem.Allocator) !*Parser {
         const parser = try gpa.create(Parser);
-        parser.* = .{ .alloc = gpa };
+        parser.* = .{ .gpa = gpa };
         return parser;
     }
 
     pub fn deinit(self: *Parser) void {
-        self.alloc.destroy(self);
+        self.gpa.destroy(self);
     }
 
-    fn make_error_context(self: *Parser, err: anyerror) void {
+    fn makeErrorCtx(self: *Parser, err: anyerror) void {
         self.error_ctx = ErrorContext{
             .err = err,
             .index = self.index,
-            .line_number = self.cur_line_number(),
+            .line_number = self.curLineNumber(),
         };
     }
 
-    pub fn get_error_context(self: *Parser) ?ErrorContext {
+    pub fn getErrorCtx(self: *Parser) ?ErrorContext {
         return self.error_ctx;
     }
 
-    fn cur_line_number(self: *Parser) usize {
+    fn curLineNumber(self: *Parser) usize {
         return std.mem.count(u8, self.content[0..self.index], "\n") + 1;
     }
 
@@ -72,123 +72,123 @@ pub const Parser = struct {
     }
 
     /// Parses a TOML file from the given file path.
-    pub fn parse_file(self: *Parser, io: std.Io, file_path: []const u8) !*toml.Toml {
+    pub fn parseFile(self: *Parser, io: std.Io, file_path: []const u8) !*toml.Toml {
         const cwd = std.Io.Dir.cwd();
-        const buffer = try cwd.readFileAlloc(io, file_path, self.alloc, .unlimited);
-        defer self.alloc.free(buffer);
-        return self.parse_string(buffer);
+        const buffer = try cwd.readFileAlloc(io, file_path, self.gpa, .unlimited);
+        defer self.gpa.free(buffer);
+        return self.parseData(buffer);
     }
 
     /// Parses the given content into TOML.
-    pub fn parse_string(self: *Parser, content: []const u8) !*toml.Toml {
+    pub fn parseData(self: *Parser, content: []const u8) !*toml.Toml {
         self.reset();
         self.content = content;
-        return self.parse_root() catch |err| {
-            self.make_error_context(err);
+        return self.parseRoot() catch |err| {
+            self.makeErrorCtx(err);
             return err;
         };
     }
 
-    fn parse_root(self: *Parser) !*toml.Toml {
+    fn parseRoot(self: *Parser) !*toml.Toml {
         if (!std.unicode.utf8ValidateSlice(self.content)) return ParseError.NotUTF8;
-        self.skip_utf8_bom();
-        const root = try toml.Toml.init(self.alloc);
+        self.skipUTF8Bom();
+        const root = try toml.Toml.init(self.gpa);
         errdefer root.deinit();
-        try self.parse_table(&root.table.table);
+        try self.parseTable(&root.table.table);
         return root;
     }
 
-    fn parse_table(self: *Parser, root: *toml.TomlTable) !void {
-        try self.skip_while_char();
+    fn parseTable(self: *Parser, root: *toml.TomlTable) !void {
+        try self.skipWhileChar();
         while (self.current()) |c| {
             if (c == '[') {
                 if (root.t_type != .root) {
                     break;
-                } else if (try self.try_peek() == '[') {
+                } else if (try self.tryPeek() == '[') {
                     self.advance();
-                    const array_key = try self.parse_table_header();
+                    const array_key = try self.parseTableHeader();
                     if (self.consume() != ']') return ParseError.InvalidTableArrayHeader;
-                    try self.expect_skip_line();
-                    const parts = try types.split_dotted_key(array_key, self.alloc);
-                    defer self.alloc.free(parts);
+                    try self.expectSkipLine();
+                    const parts = try types.splitDottedKey(array_key, self.gpa);
+                    defer self.gpa.free(parts);
                     if (parts.len == 0) return ParseError.InvalidTableArrayHeader;
-                    try self.parse_array_of_tables(root, parts);
+                    try self.parseArrayOfTables(root, parts);
                 } else {
-                    const header = try self.parse_table_header();
-                    try self.expect_skip_line();
-                    const parts = try types.split_dotted_key(header, self.alloc);
-                    defer self.alloc.free(parts);
+                    const header = try self.parseTableHeader();
+                    try self.expectSkipLine();
+                    const parts = try types.splitDottedKey(header, self.gpa);
+                    defer self.gpa.free(parts);
                     if (parts.len == 0) return ParseError.InvalidTableHeader;
-                    const table = try root.create_table(parts, .header_t, self.alloc);
-                    try self.parse_table(table);
+                    const table = try root.createTable(parts, .header_t, self.gpa);
+                    try self.parseTable(table);
                 }
             } else {
-                const kv = try self.parse_key_value();
+                const kv = try self.parseKeyValue();
                 {
                     errdefer {
                         var value = kv.value;
-                        self.alloc.free(kv.key_parts);
-                        value.deinit(self.alloc);
+                        self.gpa.free(kv.key_parts);
+                        value.deinit(self.gpa);
                     }
-                    try self.expect_skip_line();
+                    try self.expectSkipLine();
                 }
-                try root.add_key_value(kv, self.alloc);
+                try root.addKeyValue(kv, self.gpa);
             }
-            try self.skip_while_char();
+            try self.skipWhileChar();
         }
     }
 
-    fn parse_table_header(self: *Parser) ![]const u8 {
+    fn parseTableHeader(self: *Parser) ![]const u8 {
         self.advance();
         const start = self.index;
-        if (!self.advance_until_any("]")) return ParseError.ErrorEOF;
+        if (!self.advanceUntilAny("]")) return ParseError.ErrorEOF;
         const header = std.mem.trim(u8, self.content[start..self.index], " \t");
         self.advance();
         return header;
     }
 
-    fn parse_key_value(self: *Parser) !KeyValue {
-        const key_parts = try self.parse_key();
-        errdefer self.alloc.free(key_parts);
-        var value = try self.parse_value();
-        errdefer value.deinit(self.alloc);
+    fn parseKeyValue(self: *Parser) !KeyValue {
+        const key_parts = try self.parseKey();
+        errdefer self.gpa.free(key_parts);
+        var value = try self.parseValue();
+        errdefer value.deinit(self.gpa);
         if (key_parts.len == 0) return ParseError.InvalidKey;
         return KeyValue{ .key_parts = key_parts, .value = value };
     }
 
-    fn parse_key(self: *Parser) ![]const []const u8 {
-        var parts = try std.ArrayList([]const u8).initCapacity(self.alloc, 5);
-        errdefer parts.deinit(self.alloc);
+    fn parseKey(self: *Parser) ![]const []const u8 {
+        var parts = try std.ArrayList([]const u8).initCapacity(self.gpa, 5);
+        errdefer parts.deinit(self.gpa);
         var start: ?usize = null;
-        self.skip_whitespace();
+        self.skipWhitespace();
         while (self.current()) |c| {
             switch (c) {
                 '=' => {
                     if (start) |i| {
                         try parts.append(
-                            self.alloc,
+                            self.gpa,
                             std.mem.trim(u8, self.content[i..self.index], " \t"),
                         );
                     }
                     self.advance();
-                    return try parts.toOwnedSlice(self.alloc);
+                    return try parts.toOwnedSlice(self.gpa);
                 },
                 '\"', '\'' => {
                     if (start) |_| return ParseError.InvalidKey;
                     const delim = self.content[self.index .. self.index + 1];
                     start = self.index;
-                    const key_part = try self.parse_string_value(delim);
-                    defer self.alloc.free(key_part);
-                    self.skip_whitespace();
+                    const key_part = try self.parseStringValue(delim);
+                    defer self.gpa.free(key_part);
+                    self.skipWhitespace();
                 },
                 '.' => {
                     if (start) |i| {
-                        try parts.append(self.alloc, std.mem.trim(u8, self.content[i..self.index], " \t"));
+                        try parts.append(self.gpa, std.mem.trim(u8, self.content[i..self.index], " \t"));
                         start = null;
                     }
                     if (parts.items.len == 0) return ParseError.InvalidKey;
                     self.advance();
-                    self.skip_whitespace();
+                    self.skipWhitespace();
                 },
                 '\n' => return ParseError.InvalidKey,
                 else => {
@@ -202,39 +202,39 @@ pub const Parser = struct {
         return ParseError.ErrorEOF;
     }
 
-    fn parse_value(self: *Parser) anyerror!toml.TomlValue {
-        self.skip_whitespace();
-        if (self.starts_with("\"\"\"")) {
-            return toml.TomlValue{ .string = try self.parse_string_value("\"\"\"") };
-        } else if (self.starts_with("'''")) {
-            return toml.TomlValue{ .string = try self.parse_string_value("'''") };
-        } else if (self.starts_with("\"")) {
-            return toml.TomlValue{ .string = try self.parse_string_value("\"") };
-        } else if (self.starts_with("'")) {
-            return toml.TomlValue{ .string = try self.parse_string_value("'") };
-        } else if (self.starts_with("[")) {
-            return toml.TomlValue{ .array = try self.parse_array() };
-        } else if (self.starts_with("{")) {
-            return toml.TomlValue{ .table = try self.parse_inline_table() };
+    fn parseValue(self: *Parser) anyerror!toml.TomlValue {
+        self.skipWhitespace();
+        if (self.startsWith("\"\"\"")) {
+            return toml.TomlValue{ .string = try self.parseStringValue("\"\"\"") };
+        } else if (self.startsWith("'''")) {
+            return toml.TomlValue{ .string = try self.parseStringValue("'''") };
+        } else if (self.startsWith("\"")) {
+            return toml.TomlValue{ .string = try self.parseStringValue("\"") };
+        } else if (self.startsWith("'")) {
+            return toml.TomlValue{ .string = try self.parseStringValue("'") };
+        } else if (self.startsWith("[")) {
+            return toml.TomlValue{ .array = try self.parseArray() };
+        } else if (self.startsWith("{")) {
+            return toml.TomlValue{ .table = try self.parseInlineTable() };
         }
-        return try self.parse_scalar();
+        return try self.parseScalar();
     }
 
-    fn end_of_string(self: *Parser, delimiter: []const u8) bool {
-        return self.starts_with(delimiter) and !blk: {
+    fn isEndOfString(self: *Parser, delimiter: []const u8) bool {
+        return self.startsWith(delimiter) and !blk: {
             break :blk std.mem.eql(
                 u8,
                 delimiter,
-                self.peek_n(delimiter.len) orelse break :blk false,
+                self.peekN(delimiter.len) orelse break :blk false,
             );
         };
     }
 
-    fn invalid_string_delim(self: *Parser, delimiter: []const u8) bool {
+    fn invalidStringDelim(self: *Parser, delimiter: []const u8) bool {
         if (std.mem.eql(
             u8,
             delimiter,
-            self.look_behind(delimiter.len) orelse return true,
+            self.lookBehind(delimiter.len) orelse return true,
         )) {
             return !(self.index >= delimiter.len + 1 and
                 self.content[self.index - delimiter.len - 1] == '\\');
@@ -242,27 +242,27 @@ pub const Parser = struct {
         return false;
     }
 
-    fn parse_string_value(self: *Parser, delimiter: []const u8) ![]const u8 {
-        var output = try std.ArrayList(u8).initCapacity(self.alloc, 5);
-        errdefer output.deinit(self.alloc);
+    fn parseStringValue(self: *Parser, delimiter: []const u8) ![]const u8 {
+        var output = try std.ArrayList(u8).initCapacity(self.gpa, 5);
+        errdefer output.deinit(self.gpa);
         for (0..delimiter.len) |_| self.advance();
         const is_multiline = std.mem.eql(u8, delimiter, "\"\"\"") or
             std.mem.eql(u8, delimiter, "'''");
         if (is_multiline and (self.current() == '\n' or self.current() == '\\'))
-            try self.skip_while_char();
+            try self.skipWhileChar();
         while (self.current()) |c| {
             switch (c) {
                 '\'', '\"' => {
-                    if (self.end_of_string(delimiter)) {
-                        if (output.items.len > 0 and self.invalid_string_delim(delimiter))
+                    if (self.isEndOfString(delimiter)) {
+                        if (output.items.len > 0 and self.invalidStringDelim(delimiter))
                             return ParseError.InvalidStringDelimiter;
                         for (0..delimiter.len) |_| self.advance();
-                        return output.toOwnedSlice(self.alloc);
+                        return output.toOwnedSlice(self.gpa);
                     }
                 },
                 '\n', '\r' => if (!is_multiline) return ParseError.InvalidChar,
                 '\\' => if (delimiter[0] == '\"') {
-                    try self.parse_escaped(is_multiline, &output);
+                    try self.parseEscaped(is_multiline, &output);
                     continue;
                 },
                 else => {},
@@ -275,28 +275,28 @@ pub const Parser = struct {
                 }
             }
 
-            try output.append(self.alloc, c);
+            try output.append(self.gpa, c);
             self.advance();
         }
         return ParseError.ErrorEOF;
     }
 
-    fn parse_escaped(self: *Parser, multiline: bool, output: *std.ArrayList(u8)) !void {
+    fn parseEscaped(self: *Parser, multiline: bool, output: *std.ArrayList(u8)) !void {
         const c = self.next() orelse return ParseError.ErrorEOF;
         _ = self.next() orelse return ParseError.ErrorEOF;
         switch (c) {
-            'u' => try self.parse_unicode(4, output),
-            'U' => try self.parse_unicode(8, output),
-            'b' => try output.append(self.alloc, 0x08),
-            'f' => try output.append(self.alloc, 0x0c),
-            't' => try output.append(self.alloc, '\t'),
-            'n' => try output.append(self.alloc, '\n'),
-            'r' => try output.append(self.alloc, '\r'),
-            '\"' => try output.append(self.alloc, '\"'),
-            '\\' => try output.append(self.alloc, '\\'),
+            'u' => try self.parseUnicode(4, output),
+            'U' => try self.parseUnicode(8, output),
+            'b' => try output.append(self.gpa, 0x08),
+            'f' => try output.append(self.gpa, 0x0c),
+            't' => try output.append(self.gpa, '\t'),
+            'n' => try output.append(self.gpa, '\n'),
+            'r' => try output.append(self.gpa, '\r'),
+            '\"' => try output.append(self.gpa, '\"'),
+            '\\' => try output.append(self.gpa, '\\'),
             '\r', '\n', ' ', '\t' => {
                 if (multiline) {
-                    try self.expect_skip_backslash(c == ' ');
+                    try self.expectSkipBackslash(c == ' ');
                 } else {
                     return ParseError.InvalidChar;
                 }
@@ -305,7 +305,7 @@ pub const Parser = struct {
         }
     }
 
-    fn parse_unicode(self: *Parser, size: u8, output: *std.ArrayList(u8)) !void {
+    fn parseUnicode(self: *Parser, size: u8, output: *std.ArrayList(u8)) !void {
         if (self.index + size > self.content.len) return ParseError.ErrorEOF;
         const cp = std.fmt.parseInt(
             u21,
@@ -316,98 +316,98 @@ pub const Parser = struct {
         var buf: [4]u8 = undefined;
         const len = std.unicode.utf8Encode(cp, buf[0..]) catch
             return ParseError.InvalidUnicode;
-        try output.appendSlice(self.alloc, buf[0..len]);
+        try output.appendSlice(self.gpa, buf[0..len]);
     }
 
-    fn parse_array(self: *Parser) !std.ArrayList(toml.TomlValue) {
-        var array = try std.ArrayList(toml.TomlValue).initCapacity(self.alloc, 5);
-        errdefer toml.deinit_array(&array, self.alloc);
+    fn parseArray(self: *Parser) !std.ArrayList(toml.TomlValue) {
+        var array = try std.ArrayList(toml.TomlValue).initCapacity(self.gpa, 5);
+        errdefer toml.deinitTomlArray(&array, self.gpa);
         self.advance();
-        try self.skip_while_char();
+        try self.skipWhileChar();
         while (self.current()) |c| {
             if (c == ']') {
                 self.advance();
                 return array;
             }
-            const value = try self.parse_value();
-            try array.append(self.alloc, value);
-            try self.skip_while_char();
+            const value = try self.parseValue();
+            try array.append(self.gpa, value);
+            try self.skipWhileChar();
             if (self.current() == ',') {
                 self.advance();
-                try self.skip_while_char();
+                try self.skipWhileChar();
             }
         }
         return ParseError.ErrorEOF;
     }
 
-    fn parse_array_of_tables(
+    fn parseArrayOfTables(
         self: *Parser,
         root: *toml.TomlTable,
         key_parts: []const []const u8,
     ) anyerror!void {
-        var array = try root.get_or_create_array(key_parts, self.alloc);
+        var array = try root.getOrCreateArray(key_parts, self.gpa);
         var table_toml = toml.TomlValue{
             .table = toml.TomlTable.init(.array_t, .explicit),
         };
         {
-            errdefer table_toml.deinit(self.alloc);
-            try self.parse_table(&table_toml.table);
+            errdefer table_toml.deinit(self.gpa);
+            try self.parseTable(&table_toml.table);
         }
-        try array.append(self.alloc, table_toml);
+        try array.append(self.gpa, table_toml);
 
         if ((self.current() orelse return) == '[') {
-            if (try self.try_peek() == '[') return;
-            const array_key = self.peek_until("]") orelse return ParseError.ErrorEOF;
-            const parts = try types.split_dotted_key(array_key[1..], self.alloc);
-            defer self.alloc.free(parts);
+            if (try self.tryPeek() == '[') return;
+            const array_key = self.peekUntil("]") orelse return ParseError.ErrorEOF;
+            const parts = try types.splitDottedKey(array_key[1..], self.gpa);
+            defer self.gpa.free(parts);
             if (std.mem.eql(u8, key_parts[0], parts[0])) {
                 if (parts.len == 1 and key_parts.len == 1) return ParseError.KeyValueTypeOverride;
                 for (0..array_key.len + 1) |_| self.advance();
                 var nested_n: u8 = 0;
                 const table = blk: {
                     if (parts.len == 1) {
-                        break :blk try root.get_or_create_table(
+                        break :blk try root.getOrCreateTable(
                             parts,
                             .array_t,
                             .explicit,
-                            self.alloc,
+                            self.gpa,
                         );
                     } else {
-                        const last_array = try root.get_last_array(parts[0 .. parts.len - 1], &nested_n);
+                        const last_array = try root.getLastArray(parts[0 .. parts.len - 1], &nested_n);
                         if (last_array.items.len == 0) return ParseError.ExpectedTable;
                         const last = &last_array.items[last_array.items.len - 1].table;
-                        break :blk try last.get_or_create_table(
+                        break :blk try last.getOrCreateTable(
                             parts[nested_n..],
                             .array_t,
                             .explicit,
-                            self.alloc,
+                            self.gpa,
                         );
                     }
                 };
-                try self.parse_table(table);
+                try self.parseTable(table);
             }
         }
     }
 
-    fn parse_inline_table(self: *Parser) !toml.TomlTable {
-        var table = toml.TomlTable.init_inline();
-        errdefer table.deinit(self.alloc);
+    fn parseInlineTable(self: *Parser) !toml.TomlTable {
+        var table = toml.TomlTable.initInline();
+        errdefer table.deinit(self.gpa);
         var comma = false;
         self.advance();
-        self.skip_whitespace();
+        self.skipWhitespace();
         while (self.current()) |c| {
             if (c == '}') {
                 if (comma) return ParseError.TrailingComma;
                 self.advance();
                 return table;
             }
-            const kv = try self.parse_key_value();
-            try table.add_key_value(kv, self.alloc);
-            self.skip_whitespace();
+            const kv = try self.parseKeyValue();
+            try table.addKeyValue(kv, self.gpa);
+            self.skipWhitespace();
             if (self.current() == ',') {
                 comma = true;
                 self.advance();
-                self.skip_whitespace();
+                self.skipWhitespace();
             } else {
                 comma = false;
             }
@@ -415,21 +415,21 @@ pub const Parser = struct {
         return ParseError.ErrorEOF;
     }
 
-    fn parse_scalar(self: *Parser) !toml.TomlValue {
+    fn parseScalar(self: *Parser) !toml.TomlValue {
         const start = self.index;
-        _ = self.advance_until_any("#,]}\n");
+        _ = self.advanceUntilAny("#,]}\n");
         const str = std.mem.trim(u8, self.content[start..self.index], " \t");
-        if (types.interpret_int(str)) |x| {
+        if (types.interpretInt(str)) |x| {
             return toml.TomlValue{ .int = x };
-        } else if (types.interpret_float(str)) |x| {
+        } else if (types.interpretFloat(str)) |x| {
             return toml.TomlValue{ .float = x };
-        } else if (types.interpret_bool(str)) |x| {
+        } else if (types.interpretBool(str)) |x| {
             return toml.TomlValue{ .bool = x };
-        } else if (try types.interpret_datetime(str)) |x| {
+        } else if (try types.interpretDateTime(str)) |x| {
             return toml.TomlValue{ .datetime = x };
-        } else if (try types.interpret_date(str)) |x| {
+        } else if (try types.interpretDate(str)) |x| {
             return toml.TomlValue{ .date = x };
-        } else if (try types.interpret_time(str)) |x| {
+        } else if (try types.interpretTime(str)) |x| {
             return toml.TomlValue{ .time = x };
         }
         return ParseError.InvalidValue;
@@ -452,7 +452,7 @@ pub const Parser = struct {
         if (self.index < self.content.len) self.index += 1;
     }
 
-    fn advance_until_any(self: *Parser, chars: []const u8) bool {
+    fn advanceUntilAny(self: *Parser, chars: []const u8) bool {
         while (self.current()) |c| {
             if (contains(chars, c)) return true;
             self.advance();
@@ -460,20 +460,20 @@ pub const Parser = struct {
         return false;
     }
 
-    fn advance_until_delim(self: *Parser, delim: []const u8) bool {
+    fn advanceUntilDelim(self: *Parser, delim: []const u8) bool {
         while (self.current()) |_| {
-            if (self.starts_with(delim)) return true;
+            if (self.startsWith(delim)) return true;
             self.advance();
         }
         return false;
     }
 
-    fn starts_with(self: *Parser, prefix: []const u8) bool {
+    fn startsWith(self: *Parser, prefix: []const u8) bool {
         if (self.index + prefix.len > self.content.len) return false;
         return std.mem.eql(u8, self.content[self.index .. self.index + prefix.len], prefix);
     }
 
-    fn skip_utf8_bom(self: *Parser) void {
+    fn skipUTF8Bom(self: *Parser) void {
         if (self.index != 0) return;
         if (self.content.len < 3) return;
         if (self.content[0] == 0xEF and
@@ -484,9 +484,9 @@ pub const Parser = struct {
         }
     }
 
-    fn skip_whitespace(self: *Parser) void {
+    fn skipWhitespace(self: *Parser) void {
         while (self.current()) |c| {
-            if (types.is_whitespace(c)) {
+            if (types.isWhitespace(c)) {
                 self.advance();
             } else {
                 break;
@@ -494,11 +494,11 @@ pub const Parser = struct {
         }
     }
 
-    fn skip_line(self: *Parser) !void {
+    fn skipLine(self: *Parser) !void {
         var in_comment = false;
         while (self.current()) |c| {
             if (c == '\r') {
-                const n = try self.try_next();
+                const n = try self.tryNext();
                 if (n != '\n') return ParseError.InvalidChar;
                 self.advance();
                 break;
@@ -521,14 +521,14 @@ pub const Parser = struct {
         }
     }
 
-    fn expect_skip_backslash(self: *Parser, expect_newline: bool) !void {
+    fn expectSkipBackslash(self: *Parser, expect_newline: bool) !void {
         var newline = false;
         while (self.current()) |c| {
             if (c == '\n') {
-                try self.skip_line();
+                try self.skipLine();
                 newline = true;
                 continue;
-            } else if (!types.is_whitespace(c)) {
+            } else if (!types.isWhitespace(c)) {
                 if (!newline and expect_newline) return ParseError.InvalidChar;
                 return;
             }
@@ -536,35 +536,35 @@ pub const Parser = struct {
         }
     }
 
-    fn expect_skip_line(self: *Parser) !void {
+    fn expectSkipLine(self: *Parser) !void {
         while (self.current()) |c| {
             if (c == '\n' or c == '\r' or c == '#') {
-                return try self.skip_line();
+                return try self.skipLine();
             }
-            if (!types.is_whitespace(c)) return ParseError.InlineDefinition;
+            if (!types.isWhitespace(c)) return ParseError.InlineDefinition;
             self.advance();
         }
     }
 
-    fn skip_while_char(self: *Parser) !void {
-        try self.skip_comments_ws();
+    fn skipWhileChar(self: *Parser) !void {
+        try self.skipCommentsAndWhitespace();
         const c = self.current();
         if (c == '\n' or c == '\r' or c == '#') {
-            try self.skip_comments_ws();
-            try self.skip_while_char();
+            try self.skipCommentsAndWhitespace();
+            try self.skipWhileChar();
         }
     }
 
-    fn skip_comments_ws(self: *Parser) !void {
-        self.skip_whitespace();
+    fn skipCommentsAndWhitespace(self: *Parser) !void {
+        self.skipWhitespace();
         while (self.current()) |c| {
             if (c == '\n' or c == '\r' or c == '#') {
-                try self.skip_line();
+                try self.skipLine();
             } else {
                 break;
             }
         }
-        self.skip_whitespace();
+        self.skipWhitespace();
     }
 
     fn next(self: *Parser) ?u8 {
@@ -573,7 +573,7 @@ pub const Parser = struct {
         return self.content[self.index];
     }
 
-    fn try_next(self: *Parser) !u8 {
+    fn tryNext(self: *Parser) !u8 {
         return self.next() orelse ParseError.ErrorEOF;
     }
 
@@ -581,16 +581,16 @@ pub const Parser = struct {
         return if (self.index < self.content.len - 1) self.content[self.index + 1] else null;
     }
 
-    fn try_peek(self: *Parser) !u8 {
+    fn tryPeek(self: *Parser) !u8 {
         return self.peek() orelse ParseError.ErrorEOF;
     }
 
-    fn peek_n(self: *Parser, n: usize) ?[]const u8 {
+    fn peekN(self: *Parser, n: usize) ?[]const u8 {
         if (self.index + 1 + n > self.content.len) return null;
         return self.content[self.index + 1 .. self.index + 1 + n];
     }
 
-    fn peek_until(self: *Parser, str: []const u8) ?[]const u8 {
+    fn peekUntil(self: *Parser, str: []const u8) ?[]const u8 {
         var i = self.index;
         while (i + str.len <= self.content.len) {
             if (self.content[i] == '#') {
@@ -605,7 +605,7 @@ pub const Parser = struct {
         return null;
     }
 
-    fn look_behind(self: *Parser, n: usize) ?[]const u8 {
+    fn lookBehind(self: *Parser, n: usize) ?[]const u8 {
         if (self.index - n < 0) return null;
         return self.content[self.index - n .. self.index];
     }

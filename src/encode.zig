@@ -121,6 +121,7 @@ fn formatDateTime(allocator: std.mem.Allocator, dt: types.DateTime) ![]const u8 
     );
 }
 
+/// TODO: Deprecated
 pub const JsonEncoder = struct {
     content: std.ArrayList(u8),
     type_info: bool,
@@ -145,26 +146,26 @@ pub const JsonEncoder = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn to_owned(self: *JsonEncoder) ![]const u8 {
+    pub fn toOwned(self: *JsonEncoder) ![]const u8 {
         defer self.allocator.destroy(self);
         return try self.content.toOwnedSlice(self.allocator);
     }
 
-    pub fn to_json(json: *JsonEncoder, value: *const toml.TomlValue, indent: *usize) anyerror!void {
+    pub fn toJson(json: *JsonEncoder, value: *const toml.TomlValue, indent: *usize) anyerror!void {
         switch (value.*) {
-            .string => |v| try json.string_to_json(&v),
-            .int => |v| try json.int_to_json(&v),
-            .float => |v| try json.float_to_json(&v),
-            .bool => |v| try json.bool_to_json(&v),
-            .date => |v| try json.date_to_json(&v),
-            .time => |v| try json.time_to_json(&v),
-            .datetime => |v| try json.datetime_to_json(&v),
-            .array => |v| try json.array_to_json(&v, indent),
-            .table => |v| try json.table_to_json(&v, indent),
+            .string => |v| try json.stringToJson(&v),
+            .int => |v| try json.intToJson(&v),
+            .float => |v| try json.floatToJson(&v),
+            .bool => |v| try json.boolToJson(&v),
+            .date => |v| try json.dateToJson(&v),
+            .time => |v| try json.timeToJson(&v),
+            .datetime => |v| try json.datetimeToJson(&v),
+            .array => |v| try json.arrayToJson(&v, indent),
+            .table => |v| try json.tableToJson(&v, indent),
         }
     }
 
-    fn string_to_json(json: *JsonEncoder, value: *const []const u8) !void {
+    fn stringToJson(json: *JsonEncoder, value: *const []const u8) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -175,7 +176,7 @@ pub const JsonEncoder = struct {
         try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(&json.buffer, "\"{s}\"", .{value.*}));
     }
 
-    fn int_to_json(json: *JsonEncoder, value: *const i64) !void {
+    fn intToJson(json: *JsonEncoder, value: *const i64) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -186,7 +187,7 @@ pub const JsonEncoder = struct {
         try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(&json.buffer, "{}", .{value.*}));
     }
 
-    fn float_to_json(json: *JsonEncoder, value: *const f64) !void {
+    fn floatToJson(json: *JsonEncoder, value: *const f64) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -197,7 +198,7 @@ pub const JsonEncoder = struct {
         try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(&json.buffer, "{}", .{value.*}));
     }
 
-    fn bool_to_json(json: *JsonEncoder, value: *const bool) !void {
+    fn boolToJson(json: *JsonEncoder, value: *const bool) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -208,7 +209,7 @@ pub const JsonEncoder = struct {
         try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(&json.buffer, "{}", .{value.*}));
     }
 
-    fn date_to_json(json: *JsonEncoder, value: *const types.Date) !void {
+    fn dateToJson(json: *JsonEncoder, value: *const types.Date) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -223,7 +224,7 @@ pub const JsonEncoder = struct {
         ));
     }
 
-    fn time_to_json(json: *JsonEncoder, value: *const types.Time) !void {
+    fn timeToJson(json: *JsonEncoder, value: *const types.Time) !void {
         if (json.type_info) {
             return try json.content.appendSlice(json.allocator, try std.fmt.bufPrint(
                 &json.buffer,
@@ -238,7 +239,7 @@ pub const JsonEncoder = struct {
         ));
     }
 
-    fn datetime_to_json(json: *JsonEncoder, value: *const types.DateTime) !void {
+    fn datetimeToJson(json: *JsonEncoder, value: *const types.DateTime) !void {
         if (json.type_info) {
             var datetime: []u8 = undefined;
             if (value.offset_minutes) |offset| {
@@ -295,10 +296,10 @@ pub const JsonEncoder = struct {
         ));
     }
 
-    fn array_to_json(json: *JsonEncoder, value: *const toml.TomlArray, indent: *usize) !void {
+    fn arrayToJson(json: *JsonEncoder, value: *const toml.TomlArray, indent: *usize) !void {
         try json.content.append(json.allocator, '[');
         for (value.items, 0..) |*e, i| {
-            try json.to_json(e, indent);
+            try json.toJson(e, indent);
             if (i < value.items.len - 1) {
                 try json.content.appendSlice(json.allocator, ", ");
             }
@@ -306,7 +307,7 @@ pub const JsonEncoder = struct {
         try json.content.append(json.allocator, ']');
     }
 
-    fn table_to_json(json: *JsonEncoder, value: *const toml.TomlTable, indent: *usize) !void {
+    fn tableToJson(json: *JsonEncoder, value: *const toml.TomlTable, indent: *usize) !void {
         try json.content.append(json.allocator, '{');
         var it = value.table.iterator();
         const n = value.table.count();
@@ -316,14 +317,14 @@ pub const JsonEncoder = struct {
             try json.content.append(json.allocator, '\n');
             indent.* += JsonEncoder.default_indent;
             for (0..indent.*) |_| try json.content.append(json.allocator, ' ');
-            if (json.type_info and types.is_quoted(key) and key.len > 2) {
+            if (json.type_info and types.isQuoted(key) and key.len > 2) {
                 key = std.mem.trim(u8, key[1 .. key.len - 1], " \t");
             }
             try json.content.appendSlice(
                 json.allocator,
                 try std.fmt.bufPrint(&json.buffer, "\"{s}\": ", .{key}),
             );
-            try json.to_json(e.value_ptr, indent);
+            try json.toJson(e.value_ptr, indent);
             indent.* -= JsonEncoder.default_indent;
             if (i < n - 1) {
                 i += 1;
@@ -357,32 +358,38 @@ pub const TomlEncoder = struct {
         self.allocator.destroy(self);
     }
 
-    pub fn to_owned(self: *TomlEncoder) ![]const u8 {
+    /// Allocate the converted TOML string.
+    pub fn toOwned(self: *TomlEncoder) ![]const u8 {
         defer self.allocator.destroy(self);
         return try self.content.toOwnedSlice(self.allocator);
     }
 
-    pub fn to_toml(encoder: *TomlEncoder, value: *toml.TomlValue, header: ?[]const u8) anyerror!void {
+    /// Convert the TomlValue to TOML string.
+    pub fn toToml(
+        encoder: *TomlEncoder,
+        value: *toml.TomlValue,
+        header: ?[]const u8,
+    ) anyerror!void {
         switch (value.*) {
-            .string => |*v| try encoder.string_to_toml(v, header),
-            .int => |*v| try encoder.int_to_toml(v, header),
-            .float => |*v| try encoder.float_to_toml(v, header),
-            .bool => |*v| try encoder.bool_to_toml(v, header),
-            .date => |*v| try encoder.date_to_toml(v, header),
-            .time => |*v| try encoder.time_to_toml(v, header),
-            .datetime => |*v| try encoder.datetime_to_toml(v, header),
-            .array => |*v| try encoder.array_to_toml(v, header),
+            .string => |*v| try encoder.stringToToml(v, header),
+            .int => |*v| try encoder.intToToml(v, header),
+            .float => |*v| try encoder.floatToToml(v, header),
+            .bool => |*v| try encoder.boolToToml(v, header),
+            .date => |*v| try encoder.dateToToml(v, header),
+            .time => |*v| try encoder.timeToToml(v, header),
+            .datetime => |*v| try encoder.datetimeToToml(v, header),
+            .array => |*v| try encoder.arrayToToml(v, header),
             .table => |*v| {
                 switch (v.t_type) {
-                    .inline_t => try encoder.inline_table_to_toml(v, header),
-                    .dotted_t => try encoder.dotted_table_to_toml(v, header),
-                    else => try encoder.header_table_to_toml(v, header),
+                    .inline_t => try encoder.inlineTableToToml(v, header),
+                    .dotted_t => try encoder.dottedTableToToml(v, header),
+                    else => try encoder.headerTableToToml(v, header),
                 }
             },
         }
     }
 
-    fn string_to_toml(encoder: *TomlEncoder, value: *const []const u8, header: ?[]const u8) !void {
+    fn stringToToml(encoder: *TomlEncoder, value: *const []const u8, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(&encoder.buffer, "{s} = \"{s}\"", .{ h, value.* })
         else
@@ -390,7 +397,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn int_to_toml(encoder: *TomlEncoder, value: *const i64, header: ?[]const u8) !void {
+    fn intToToml(encoder: *TomlEncoder, value: *const i64, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(&encoder.buffer, "{s} = {}", .{ h, value.* })
         else
@@ -398,7 +405,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn float_to_toml(encoder: *TomlEncoder, value: *const f64, header: ?[]const u8) !void {
+    fn floatToToml(encoder: *TomlEncoder, value: *const f64, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(&encoder.buffer, "{s} = {}", .{ h, value.* })
         else
@@ -406,7 +413,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn bool_to_toml(encoder: *TomlEncoder, value: *const bool, header: ?[]const u8) !void {
+    fn boolToToml(encoder: *TomlEncoder, value: *const bool, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(&encoder.buffer, "{s} = {}", .{ h, value.* })
         else
@@ -414,7 +421,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn date_to_toml(encoder: *TomlEncoder, value: *const types.Date, header: ?[]const u8) !void {
+    fn dateToToml(encoder: *TomlEncoder, value: *const types.Date, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(
                 &encoder.buffer,
@@ -430,7 +437,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn time_to_toml(encoder: *TomlEncoder, value: *const types.Time, header: ?[]const u8) !void {
+    fn timeToToml(encoder: *TomlEncoder, value: *const types.Time, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(
                 &encoder.buffer,
@@ -446,7 +453,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn datetime_to_toml(encoder: *TomlEncoder, value: *const types.DateTime, header: ?[]const u8) !void {
+    fn datetimeToToml(encoder: *TomlEncoder, value: *const types.DateTime, header: ?[]const u8) !void {
         const key = if (header) |h|
             try std.fmt.bufPrint(
                 &encoder.buffer,
@@ -479,7 +486,7 @@ pub const TomlEncoder = struct {
         return try encoder.content.appendSlice(encoder.allocator, key);
     }
 
-    fn array_to_toml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
+    fn arrayToToml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
         if (header) |h| {
             try encoder.content.appendSlice(
                 encoder.allocator,
@@ -488,7 +495,7 @@ pub const TomlEncoder = struct {
         }
         try encoder.content.append(encoder.allocator, '[');
         for (value.items, 0..) |*e, i| {
-            try encoder.to_toml(e, null);
+            try encoder.toToml(e, null);
             if (i < value.items.len - 1) {
                 try encoder.content.appendSlice(encoder.allocator, ", ");
             }
@@ -496,7 +503,7 @@ pub const TomlEncoder = struct {
         try encoder.content.append(encoder.allocator, ']');
     }
 
-    fn dotted_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
+    fn dottedTableToToml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
         var header = try std.ArrayList(u8).initCapacity(encoder.allocator, 5);
         defer header.deinit(encoder.allocator);
         if (root_key) |rk| try header.appendSlice(encoder.allocator, rk);
@@ -509,18 +516,18 @@ pub const TomlEncoder = struct {
                 try var_key.append(encoder.allocator, '.');
                 try var_key.appendSlice(encoder.allocator, key);
                 defer var_key.deinit(encoder.allocator);
-                try encoder.to_toml(e.value_ptr, var_key.items);
+                try encoder.toToml(e.value_ptr, var_key.items);
                 if (i < value.table.count() - 1) try encoder.content.append(encoder.allocator, '\n');
                 i += 1;
             } else {
                 try header.append(encoder.allocator, '.');
                 try header.appendSlice(encoder.allocator, key);
-                try encoder.to_toml(e.value_ptr, header.items);
+                try encoder.toToml(e.value_ptr, header.items);
             }
         }
     }
 
-    fn inline_table_to_toml(encoder: *TomlEncoder, value: *const toml.TomlTable, root_key: ?[]const u8) !void {
+    fn inlineTableToToml(encoder: *TomlEncoder, value: *const toml.TomlTable, root_key: ?[]const u8) !void {
         if (root_key) |k| {
             try encoder.content.appendSlice(
                 encoder.allocator,
@@ -533,7 +540,7 @@ pub const TomlEncoder = struct {
         var i: u32 = 0;
         while (it.next()) |e| {
             const key = e.key_ptr.*;
-            try encoder.to_toml(e.value_ptr, key);
+            try encoder.toToml(e.value_ptr, key);
             if (i < n - 1) {
                 i += 1;
                 try encoder.content.appendSlice(encoder.allocator, ", ");
@@ -542,18 +549,18 @@ pub const TomlEncoder = struct {
         try encoder.content.append(encoder.allocator, '}');
     }
 
-    fn array_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
+    fn arrayTableToToml(encoder: *TomlEncoder, value: *toml.TomlArray, header: ?[]const u8) !void {
         for (value.items) |*table| {
             try encoder.content.appendSlice(encoder.allocator, try std.fmt.bufPrint(
                 &encoder.buffer,
                 "\n[[{s}]]\n",
                 .{header.?},
             ));
-            try encoder.to_toml(table, null);
+            try encoder.toToml(table, null);
         }
     }
 
-    fn header_table_to_toml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
+    fn headerTableToToml(encoder: *TomlEncoder, value: *toml.TomlTable, root_key: ?[]const u8) !void {
         var header = try std.ArrayList(u8).initCapacity(encoder.allocator, 5);
         defer header.deinit(encoder.allocator);
         if (root_key) |rk| {
@@ -571,7 +578,7 @@ pub const TomlEncoder = struct {
                         .header_t => {
                             try header.appendSlice(encoder.allocator, key);
                             if (val.table.origin == .implicit) {
-                                try encoder.to_toml(val, header.items);
+                                try encoder.toToml(val, header.items);
                                 header.clearAndFree(encoder.allocator);
                                 continue;
                             }
@@ -580,16 +587,16 @@ pub const TomlEncoder = struct {
                                 "\n[{s}]\n",
                                 .{header.items},
                             ));
-                            try encoder.to_toml(val, header.items);
+                            try encoder.toToml(val, header.items);
                             header.shrinkAndFree(encoder.allocator, header.items.len - key.len);
                         },
                         .array_t => {
                             try header.appendSlice(encoder.allocator, key);
-                            try encoder.to_toml(val, header.items);
+                            try encoder.toToml(val, header.items);
                             header.shrinkAndFree(encoder.allocator, header.items.len - key.len);
                         },
                         else => {
-                            try encoder.to_toml(val, key);
+                            try encoder.toToml(val, key);
                             try encoder.content.append(encoder.allocator, '\n');
                         },
                     }
@@ -600,15 +607,15 @@ pub const TomlEncoder = struct {
                         val.array.items[0].table.t_type == .array_t)
                     {
                         try header.appendSlice(encoder.allocator, key);
-                        try encoder.array_table_to_toml(&val.array, header.items);
+                        try encoder.arrayTableToToml(&val.array, header.items);
                         header.shrinkAndFree(encoder.allocator, header.items.len - key.len);
                         continue;
                     }
-                    try encoder.to_toml(val, key);
+                    try encoder.toToml(val, key);
                     try encoder.content.append(encoder.allocator, '\n');
                 },
                 else => {
-                    try encoder.to_toml(val, key);
+                    try encoder.toToml(val, key);
                     try encoder.content.append(encoder.allocator, '\n');
                 },
             }

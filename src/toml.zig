@@ -6,7 +6,7 @@ pub const TomlHashMap = tab.TomlHashMap;
 pub const TomlTable = tab.TomlTable;
 pub const TomlArray = std.ArrayList(TomlValue);
 
-pub fn deinit_array(array: *TomlArray, allocator: std.mem.Allocator) void {
+pub fn deinitTomlArray(array: *TomlArray, allocator: std.mem.Allocator) void {
     for (array.items) |*item| {
         item.deinit(allocator);
     }
@@ -31,20 +31,23 @@ pub const Toml = struct {
         self.alloc.destroy(self);
     }
 
-    pub fn get_table(self: *Toml) *TomlTable {
+    /// Get the root TomlTable.
+    pub fn getTable(self: *Toml) *TomlTable {
         return &self.table.table;
     }
 
-    pub fn to_json(self: *const Toml) ![]const u8 {
-        return try self.table.to_json(self.alloc);
+    /// Convert the parsed Toml to JSON string.
+    pub fn toJson(self: *const Toml) ![]const u8 {
+        return try self.table.toJson(self.alloc);
     }
 
-    pub fn to_toml(self: *Toml) ![]const u8 {
-        return try self.table.to_toml(self.alloc);
+    /// Convert the parsed Toml to TOML string.
+    pub fn toToml(self: *Toml) ![]const u8 {
+        return try self.table.toToml(self.alloc);
     }
 
-    pub fn to_json_with_types(self: *const Toml) ![]const u8 {
-        return try self.table.to_json_with_types(self.alloc);
+    pub fn toJsonWithTypes(self: *const Toml) ![]const u8 {
+        return try self.table.toJsonWithTypes(self.alloc);
     }
 };
 
@@ -62,7 +65,7 @@ pub const TomlValue = union(enum) {
     pub fn deinit(self: *TomlValue, alloc: std.mem.Allocator) void {
         switch (self.*) {
             .string => |str| alloc.free(str),
-            .array => |*array| deinit_array(array, alloc),
+            .array => |*array| deinitTomlArray(array, alloc),
             .table => |*table| table.deinit(alloc),
             else => {},
         }
@@ -104,26 +107,26 @@ pub const TomlValue = union(enum) {
         return error.NotATable;
     }
 
-    pub fn to_toml(self: *TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn toToml(self: *TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var toml_str = try encode.TomlEncoder.init(allocator);
         errdefer toml_str.deinit();
-        try toml_str.to_toml(self, null);
-        return toml_str.to_owned();
+        try toml_str.toToml(self, null);
+        return toml_str.toOwned();
     }
 
-    pub fn to_json(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn toJson(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var json = try encode.JsonEncoder.init(allocator, false);
         errdefer json.deinit();
         var indent: usize = 0;
-        try json.to_json(self, &indent);
-        return json.to_owned();
+        try json.toJson(self, &indent);
+        return json.toOwned();
     }
 
-    pub fn to_json_with_types(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
+    pub fn toJsonWithTypes(self: *const TomlValue, allocator: std.mem.Allocator) ![]const u8 {
         var json = try encode.JsonEncoder.init(allocator, true);
         errdefer json.deinit();
         var indent: usize = 0;
-        try json.to_json(self, &indent);
-        return json.to_owned();
+        try json.toJson(self, &indent);
+        return json.toOwned();
     }
 };

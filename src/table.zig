@@ -44,7 +44,7 @@ pub const TomlTable = struct {
         return .{ .table = .{}, .t_type = t_type, .origin = origin };
     }
 
-    pub fn init_inline() TomlTable {
+    pub fn initInline() TomlTable {
         return init(.inline_t, .explicit);
     }
 
@@ -58,18 +58,18 @@ pub const TomlTable = struct {
     }
 
     pub fn get(self: *const TomlTable, key: []const u8) ?toml.TomlValue {
-        return self.table.get(types.interpret_key(key) catch return null);
+        return self.table.get(types.interpretKey(key) catch return null);
     }
 
     pub fn getPtr(self: *const TomlTable, key: []const u8) ?*toml.TomlValue {
-        return self.table.getPtr(types.interpret_key(key) catch return null);
+        return self.table.getPtr(types.interpretKey(key) catch return null);
     }
 
     pub fn getEntry(
         self: *const TomlTable,
         key: []const u8,
     ) ?TomlHashMap.Entry {
-        return self.table.getEntry(types.interpret_key(key) catch return null);
+        return self.table.getEntry(types.interpretKey(key) catch return null);
     }
 
     pub fn put(
@@ -78,22 +78,22 @@ pub const TomlTable = struct {
         value: toml.TomlValue,
         allocator: std.mem.Allocator,
     ) !void {
-        const parts = try types.split_dotted_key(key, allocator);
+        const parts = try types.splitDottedKey(key, allocator);
         const key_value: KeyValue = .{ .key_parts = parts, .value = value };
-        try self.add_key_value_order(key_value, allocator);
+        try self.addKeyValueOrder(key_value, allocator);
     }
 
-    pub fn put_table(
+    pub fn putTable(
         self: *TomlTable,
         key: []const u8,
         allocator: std.mem.Allocator,
     ) !void {
-        const parts = try types.split_dotted_key(key, allocator);
+        const parts = try types.splitDottedKey(key, allocator);
         defer allocator.free(parts);
-        _ = try self.create_table(parts, .header_t, allocator);
+        _ = try self.createTable(parts, .header_t, allocator);
     }
 
-    pub fn create_table(
+    pub fn createTable(
         root: *TomlTable,
         key_parts: []const []const u8,
         table_type: TableType,
@@ -101,7 +101,7 @@ pub const TomlTable = struct {
     ) !*TomlTable {
         var current = root;
         for (key_parts, 0..) |part, i| {
-            const key = types.interpret_key_alloc(allocator, part) catch |err| switch (err) {
+            const key = types.interpretKeyAlloc(allocator, part) catch |err| switch (err) {
                 types.TypeError.InvalidKey,
                 types.TypeError.InvalidEscape,
                 types.TypeError.InvalidUnicode,
@@ -137,7 +137,7 @@ pub const TomlTable = struct {
         return current;
     }
 
-    pub fn get_or_create_table(
+    pub fn getOrCreateTable(
         root: *TomlTable,
         key_parts: []const []const u8,
         table_type: TableType,
@@ -146,7 +146,7 @@ pub const TomlTable = struct {
     ) !*TomlTable {
         var current = root;
         for (key_parts, 0..) |part, i| {
-            const key = try types.interpret_key_alloc(allocator, part);
+            const key = try types.interpretKeyAlloc(allocator, part);
             const entry = try current.table.getOrPut(allocator, key);
             if (!entry.found_existing) {
                 const sub_table = toml.TomlValue{ .table = TomlTable.init(
@@ -174,7 +174,7 @@ pub const TomlTable = struct {
         return current;
     }
 
-    pub fn get_last_array(
+    pub fn getLastArray(
         root: *TomlTable,
         key_parts: []const []const u8,
         nested_n: *u8,
@@ -183,7 +183,7 @@ pub const TomlTable = struct {
         var current = root;
         var last_array: ?*toml.TomlArray = null;
         for (key_parts[0..key_parts.len]) |part| {
-            const key = try types.interpret_key(part);
+            const key = try types.interpretKey(part);
             if (current.table.getEntry(key)) |entry| {
                 if (entry.value_ptr.* == .table) {
                     current = &entry.value_ptr.table;
@@ -199,14 +199,14 @@ pub const TomlTable = struct {
         return last_array orelse TableError.ExpectedArray;
     }
 
-    pub fn get_or_create_array(
+    pub fn getOrCreateArray(
         root: *TomlTable,
         key_parts: []const []const u8,
         allocator: std.mem.Allocator,
     ) anyerror!*toml.TomlArray {
         var current = root;
         for (key_parts[0 .. key_parts.len - 1]) |part| {
-            const key = try types.interpret_key_alloc(allocator, part);
+            const key = try types.interpretKeyAlloc(allocator, part);
             if (current.table.getEntry(key)) |entry| {
                 allocator.free(key);
                 if (entry.value_ptr.* == .table) {
@@ -221,12 +221,12 @@ pub const TomlTable = struct {
             } else {
                 // `key` becomes owned by the map.
                 const new_table = TomlTable.init(.array_t, .implicit);
-                try put_keep_order(&current.table, key, toml.TomlValue{ .table = new_table }, allocator);
+                try putKeepOrder(&current.table, key, toml.TomlValue{ .table = new_table }, allocator);
                 current = &current.table.getEntry(key).?.value_ptr.table;
             }
         }
         const final_key = key_parts[key_parts.len - 1];
-        const final = try types.interpret_key_alloc(allocator, final_key);
+        const final = try types.interpretKeyAlloc(allocator, final_key);
         if (current.table.getEntry(final)) |entry| {
             allocator.free(final);
             if (entry.value_ptr.* != .array) return TableError.ExpectedArray;
@@ -238,21 +238,21 @@ pub const TomlTable = struct {
         } else {
             const array = try toml.TomlArray.initCapacity(allocator, 5);
             // `final` becomes owned by the map.
-            try put_keep_order(&current.table, final, toml.TomlValue{ .array = array }, allocator);
+            try putKeepOrder(&current.table, final, toml.TomlValue{ .array = array }, allocator);
             return &current.table.getEntry(final).?.value_ptr.array;
         }
     }
 
-    pub fn add_key_value(root: *TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
+    pub fn addKeyValue(root: *TomlTable, key_value: KeyValue, alloc: std.mem.Allocator) !void {
         defer alloc.free(key_value.key_parts);
         var value = key_value.value;
         errdefer value.deinit(alloc);
-        const key = try types.interpret_key_alloc(
+        const key = try types.interpretKeyAlloc(
             alloc,
             key_value.key_parts[key_value.key_parts.len - 1],
         );
         errdefer alloc.free(key);
-        var current = try root.get_or_create_table(
+        var current = try root.getOrCreateTable(
             key_value.key_parts[0 .. key_value.key_parts.len - 1],
             .dotted_t,
             .implicit,
@@ -270,7 +270,7 @@ pub const TomlTable = struct {
         entry.key_ptr.* = key;
     }
 
-    fn add_key_value_order(
+    fn addKeyValueOrder(
         root: *TomlTable,
         key_value: KeyValue,
         alloc: std.mem.Allocator,
@@ -278,12 +278,12 @@ pub const TomlTable = struct {
         defer alloc.free(key_value.key_parts);
         var value = key_value.value;
         errdefer value.deinit(alloc);
-        const key = try types.interpret_key_alloc(
+        const key = try types.interpretKeyAlloc(
             alloc,
             key_value.key_parts[key_value.key_parts.len - 1],
         );
         errdefer alloc.free(key);
-        var current = try root.get_or_create_table_order(
+        var current = try root.getOrCreateTableOrder(
             key_value.key_parts[0 .. key_value.key_parts.len - 1],
             .dotted_t,
             .implicit,
@@ -296,11 +296,11 @@ pub const TomlTable = struct {
                 return TableError.ImmutableInlineTable;
             return TableError.KeyValueRedefinition;
         }
-        try put_keep_order(&current.table, key, value, alloc);
+        try putKeepOrder(&current.table, key, value, alloc);
         current.origin = .explicit;
     }
 
-    fn get_or_create_table_order(
+    fn getOrCreateTableOrder(
         root: *TomlTable,
         key_parts: []const []const u8,
         table_type: TableType,
@@ -309,7 +309,7 @@ pub const TomlTable = struct {
     ) !*TomlTable {
         var current = root;
         for (key_parts, 0..) |part, i| {
-            const key = try types.interpret_key_alloc(allocator, part);
+            const key = try types.interpretKeyAlloc(allocator, part);
             const existing = current.table.getPtr(key);
             if (existing) |exist| {
                 allocator.free(key);
@@ -329,7 +329,7 @@ pub const TomlTable = struct {
                     if (i == key_parts.len - 1) origin_of_last else .implicit,
                 ) };
                 // `key` becomes owned by the map.
-                try put_keep_order(&current.table, key, sub_table, allocator);
+                try putKeepOrder(&current.table, key, sub_table, allocator);
                 current = &current.table.getPtr(key).?.table;
             }
         }
@@ -337,7 +337,7 @@ pub const TomlTable = struct {
     }
 };
 
-fn put_keep_order(
+fn putKeepOrder(
     table: *TomlHashMap,
     key: []const u8,
     value: toml.TomlValue,
@@ -358,11 +358,11 @@ fn put_keep_order(
         if (table.count() == 0 or i > table.count() - 1)
             try table.put(alloc, key, value)
         else
-            try insert_at(table, i, key, value, alloc);
+            try insertAt(table, i, key, value, alloc);
     }
 }
 
-fn insert_at(
+fn insertAt(
     table: *TomlHashMap,
     index: usize,
     key: []const u8,
